@@ -1,0 +1,10 @@
+[package]
+name = "rust-moo"
+version = "0.1.0"
+authors = ["Jesse Rusak <me@jesserusak.com>"]
+edition = "2018"
+
+[dependencies]
+rlua = "0.17.0"
+actix-web = "2.0"
+actix-rt = "1.0"
