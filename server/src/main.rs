@@ -1,7 +1,10 @@
 use actix::{Actor, StreamHandler};
 use actix_web::{web, App, HttpRequest, HttpResponse, HttpServer, Responder};
+use actix_web::middleware::Logger;
+
 use listenfd::ListenFd;
 use actix_web_actors::ws;
+use log::{info};
 
 struct ChatSocket;
 
@@ -37,12 +40,17 @@ async fn socket(req: HttpRequest, stream: web::Payload) -> impl Responder {
 
 #[actix_rt::main]
 async fn main() -> std::io::Result<()> {
+    env_logger::init();
+
     let mut listenfd = ListenFd::from_env();
 
     let mut server = HttpServer::new(|| {
         App::new()
+            .wrap(Logger::default())
+
             .route("/", web::get().to(index))
             .route("/api/socket", web::get().to(socket))
+            
     });
 
     server = if let Some(l) = listenfd.take_tcp_listener(0).unwrap() {
@@ -50,6 +58,8 @@ async fn main() -> std::io::Result<()> {
     } else {
         server.bind("127.0.0.1:8080")?
     };
+
+    info!("Starting!");
 
     server.run().await
 }
