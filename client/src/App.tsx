@@ -1,15 +1,29 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import './App.css';
 import ChatPane from './ChatPane';
+import { ServerMessage } from './Messages';
+import { ChatSocket } from './ChatSocket';
+import uuid from 'uuid/v4';
 
 const App = () => {
   const [text, setText] = useState("");
-  const [messages, setMessages] = useState([]);
+  const [messages, setMessages] = useState([] as ServerMessage[]);
+  const [socket, setSocket] = useState(null as ChatSocket | null);
+
+  useEffect(() => {
+    const loc = document.location;
+    const protocol = loc.protocol === 'https' ? 'wss' : 'ws';
+    let s = new ChatSocket(`${protocol}://${loc.host}/api/socket`);
+    s.onmessage = (message: ServerMessage) => {
+      setMessages(prev => prev.concat([message]));
+    };
+    setSocket(s);
+  }, [])
 
   const handleSubmit = (event: React.FormEvent) => {
     event.preventDefault();
 
-    const submitted = text;
+    socket!.send({text: text, id: uuid()});
     setText("");
   }
 
@@ -20,9 +34,10 @@ const App = () => {
 
   return (
     <div className="App">
-      <ChatPane message={messages} />   
+      <ChatPane messages={messages} />   
       <form onSubmit={handleSubmit}>
         <input type="text" value={text} onChange={handleChange} />
+        <input type="submit" disabled={!socket} name="Send" />
       </form>
     </div>
   );
