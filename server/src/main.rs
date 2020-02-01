@@ -1,56 +1,48 @@
-use actix::{Actor, StreamHandler};
-use actix_web::{web, App, HttpRequest, HttpResponse, HttpServer, Responder};
+use actix::{Actor, Arbiter, StreamHandler};
 use actix_web::middleware::Logger;
+use actix_web::{web, App, HttpRequest, HttpResponse, HttpServer, Responder};
 
-use listenfd::ListenFd;
 use actix_web_actors::ws;
-use log::{info};
+use listenfd::ListenFd;
+use log::info;
+use std::sync::Mutex;
 
-struct ChatSocket;
+mod object;
+use crate::object::World;
 
-impl Actor for ChatSocket {
-    type Context = ws::WebsocketContext<Self>;
-}
-
-impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for ChatSocket {
-    fn handle(
-        &mut self,
-        msg: Result<ws::Message, ws::ProtocolError>,
-        ctx: &mut Self::Context,
-    ) {
-        match msg {
-            Ok(ws::Message::Ping(msg)) => ctx.pong(&msg),
-            Ok(ws::Message::Text(text)) => ctx.text(text),
-            Ok(ws::Message::Binary(bin)) => ctx.binary(bin),
-            _ => (),
-        }
-    }
-}
-
+mod chat;
+use crate::chat::{AppState, ChatSocket};
 
 async fn index() -> impl Responder {
     HttpResponse::Ok().body("Hello world!")
 }
 
-async fn socket(req: HttpRequest, stream: web::Payload) -> impl Responder {
-    let resp = ws::start(ChatSocket {}, &req, stream);
-    println!("{:?}", resp);
-    resp
+async fn socket(
+    req: HttpRequest,
+    stream: web::Payload,
+    data: web::Data<AppState>,
+) -> impl Responder {
+    let res = ws::start(ChatSocket::new(data.clone()), &req, stream);
+    res
 }
 
 #[actix_rt::main]
 async fn main() -> std::io::Result<()> {
     env_logger::init();
 
+    let data = web::Data::new(AppState {
+        arbiter: Arbiter::new(),
+        world: Mutex::new(World::new()),
+    });
+
     let mut listenfd = ListenFd::from_env();
 
-    let mut server = HttpServer::new(|| {
+    let mut server = HttpServer::new(move || {
         App::new()
+            .app_data(data.clone())
             .wrap(Logger::default())
-
             .route("/", web::get().to(index))
             .route("/api/socket", web::get().to(socket))
-            
     });
 
     server = if let Some(l) = listenfd.take_tcp_listener(0).unwrap() {

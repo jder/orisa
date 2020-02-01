@@ -36,8 +36,8 @@ const App = () => {
     <div className="App">
       <ChatPane messages={messages} />   
       <form onSubmit={handleSubmit}>
-        <input type="text" value={text} onChange={handleChange} />
-        <input type="submit" disabled={!socket} name="Send" />
+        <input className="mainInput" autoFocus type="text" value={text} onChange={handleChange} />
+        <input type="submit" disabled={!socket} value="Send" />
       </form>
     </div>
   );
