@@ -35,13 +35,23 @@ impl Handler<ObjectMessage> for ObjectActor {
   type Result = ();
 
   fn handle(&mut self, msg: ObjectMessage, ctx: &mut Self::Context) {
-    match msg {
-      ObjectMessage::Say { text } => self.world.read(|w| {
-        w.children(self.id)
-          .for_each(|child| w.send_message(child, ObjectMessage::Broadcast { text: text.clone() }))
+    let sender = msg.immediate_sender;
+    match msg.payload {
+      ObjectMessagePayload::Say { text } => self.world.read(|w| {
+        w.children(self.id).for_each(|child| {
+          w.send_message(
+            child,
+            ObjectMessage {
+              immediate_sender: self.id,
+              payload: ObjectMessagePayload::Broadcast {
+                text: format!("{}: {}", sender, text.clone()),
+              },
+            },
+          )
+        })
       }),
       //TODO: only handle broadcasts for object types expected to have chat connections (i.e. people)
-      ObjectMessage::Broadcast { text } => self
+      ObjectMessagePayload::Broadcast { text } => self
         .world
         .read(|w| w.send_client_message(self.id, ServerMessage::new(&text))),
     }
@@ -191,7 +201,13 @@ impl World {
 }
 
 #[derive(Debug)]
-pub enum ObjectMessage {
+pub struct ObjectMessage {
+  pub immediate_sender: Id,
+  pub payload: ObjectMessagePayload,
+}
+
+#[derive(Debug)]
+pub enum ObjectMessagePayload {
   Say { text: String },
   Broadcast { text: String },
 }

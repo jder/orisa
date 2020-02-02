@@ -8,7 +8,7 @@ use std::error::Error;
 use std::sync::{Arc, RwLock};
 use uuid::Uuid;
 
-use crate::object::{Id, ObjectMessage, World, WorldRef};
+use crate::object::{Id, ObjectMessage, ObjectMessagePayload, World, WorldRef};
 
 pub struct ChatSocket {
   app_data: web::Data<AppState>,
@@ -54,13 +54,23 @@ impl ChatSocket {
   ) -> Result<(), serde_json::error::Error> {
     let message: ClientMessage = serde_json::from_str(&text)?;
     self.app_data.world_ref.read(|world| {
-      if let Some(container) = world.parent(self.self_id.unwrap()) {
-        world.send_message(container, ObjectMessage::Say { text: message.text });
+      if let Some(container) = world.parent(self.id()) {
+        world.send_message(
+          container,
+          ObjectMessage {
+            immediate_sender: self.id(),
+            payload: ObjectMessagePayload::Say { text: message.text },
+          },
+        );
       } else {
         self.send_to_client(&ServerMessage::new("You aren't anywhere."), ctx);
       }
     });
     Ok(())
+  }
+
+  fn id(&self) -> Id {
+    self.self_id.unwrap()
   }
 
   fn send_to_client(
