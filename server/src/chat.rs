@@ -26,7 +26,16 @@ impl Actor for ChatSocket {
       world.register_chat_connect(id, ctx.address());
       self.self_id = Some(id);
       self.send_to_client(&ServerMessage::new(&format!("You are object {}", id)), ctx);
+      log::info!("ChatSocket stared with id {}", id);
     });
+  }
+
+  fn stopped(&mut self, ctx: &mut Self::Context) {
+    self
+      .app_data
+      .world_ref
+      .write(|world| world.remove_chat_connection(self.self_id.unwrap(), ctx.address()));
+    log::info!("ChatSocket stopped for id {}", self.self_id.unwrap());
   }
 }
 

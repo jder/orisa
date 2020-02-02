@@ -111,6 +111,14 @@ impl World {
     self.chat_connections.insert(id, connection)
   }
 
+  pub fn remove_chat_connection(&mut self, id: Id, connection: Addr<ChatSocket>) {
+    if let Some(connections) = self.chat_connections.get_vec_mut(&id) {
+      if let Some(pos) = connections.iter().position(|x| *x == connection) {
+        connections.remove(pos);
+      }
+    }
+  }
+
   pub fn entrance(&self) -> Id {
     self.entrance_id.unwrap()
   }
