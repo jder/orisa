@@ -1,8 +1,12 @@
-use actix::{Actor, Addr, Arbiter, Context, Handler};
+use actix::{Actor, Addr, Arbiter, Context, Handler, Message};
 use std::fmt;
 
+use crate::chat::{ChatSocket, ServerMessage};
+
+use multimap::MultiMap;
+
 use std::sync::{Arc, RwLock, Weak};
-#[derive(Debug, PartialEq, Clone, Copy)]
+#[derive(Debug, PartialEq, Clone, Copy, Hash, Eq)]
 pub struct Id(usize);
 
 impl fmt::Display for Id {
@@ -27,16 +31,19 @@ impl Actor for ObjectActor {
   type Context = Context<Self>;
 }
 
-impl Handler<Message> for ObjectActor {
+impl Handler<ObjectMessage> for ObjectActor {
   type Result = ();
 
-  fn handle(&mut self, msg: Message, ctx: &mut Self::Context) {
+  fn handle(&mut self, msg: ObjectMessage, ctx: &mut Self::Context) {
     match msg {
-      Message::Say { text } => self.world.read(|w| {
+      ObjectMessage::Say { text } => self.world.read(|w| {
         w.children(self.id)
-          .for_each(|child| w.message(child, Message::Broadcast { text: text.clone() }))
+          .for_each(|child| w.send_message(child, ObjectMessage::Broadcast { text: text.clone() }))
       }),
-      Message::Broadcast { text } => log::info!("Would send text '{}' to client", text),
+      //TODO: only handle broadcasts for object types expected to have chat connections (i.e. people)
+      ObjectMessage::Broadcast { text } => self
+        .world
+        .read(|w| w.send_client_message(self.id, ServerMessage::new(&text))),
     }
   }
 }
@@ -47,6 +54,8 @@ pub struct World {
 
   arbiter: Arbiter,
   own_ref: WorldRef,
+
+  chat_connections: MultiMap<Id, Addr<ChatSocket>>,
 }
 
 /// Weak reference to the world for use by ObjectActors
@@ -98,6 +107,10 @@ impl World {
     id
   }
 
+  pub fn register_chat_connect(&mut self, id: Id, connection: Addr<ChatSocket>) {
+    self.chat_connections.insert(id, connection)
+  }
+
   pub fn entrance(&self) -> Id {
     self.entrance_id.unwrap()
   }
@@ -114,8 +127,30 @@ impl World {
     self.objects.get(of.0).unwrap().parent_id
   }
 
-  pub fn message(&self, id: Id, message: Message) {
-    self.objects.get(id.0).unwrap().address.do_send(message)
+  pub fn send_message(&self, id: Id, message: ObjectMessage) {
+    self.get(id).address.do_send(message)
+  }
+
+  pub fn send_client_message(&self, id: Id, message: ServerMessage) {
+    if let Some(connections) = self.chat_connections.get_vec(&id) {
+      for conn in connections.iter() {
+        conn.do_send(message.clone());
+      }
+    } else {
+      log::warn!(
+        "No chat connection for object {}; dropping message {:?}",
+        id,
+        message
+      );
+    }
+  }
+
+  fn get(&self, id: Id) -> &Object {
+    self.objects.get(id.0).unwrap()
+  }
+
+  fn get_mut(&mut self, id: Id) -> &mut Object {
+    self.objects.get_mut(id.0).unwrap()
   }
 
   fn create_defaults(&mut self) {
@@ -135,6 +170,7 @@ impl World {
       entrance_id: None,
       arbiter: arbiter,
       own_ref: world_ref.clone(),
+      chat_connections: MultiMap::new(),
     };
     world.create_defaults();
 
@@ -147,11 +183,11 @@ impl World {
 }
 
 #[derive(Debug)]
-pub enum Message {
+pub enum ObjectMessage {
   Say { text: String },
   Broadcast { text: String },
 }
 
-impl actix::prelude::Message for Message {
+impl Message for ObjectMessage {
   type Result = ();
 }

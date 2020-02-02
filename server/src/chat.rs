@@ -1,4 +1,4 @@
-use actix::{Actor, Arbiter, StreamHandler};
+use actix::{Actor, Arbiter, AsyncContext, Handler, Message, StreamHandler};
 use actix_web::{web, App, HttpRequest, HttpResponse, HttpServer, Responder};
 use actix_web_actors::ws;
 use serde::{Deserialize, Serialize};
@@ -8,7 +8,7 @@ use std::error::Error;
 use std::sync::{Arc, RwLock};
 use uuid::Uuid;
 
-use crate::object::{Id, Message, World, WorldRef};
+use crate::object::{Id, ObjectMessage, World, WorldRef};
 
 pub struct ChatSocket {
   app_data: web::Data<AppState>,
@@ -23,6 +23,7 @@ impl Actor for ChatSocket {
     world_ref.write(|world| {
       let entrance = world.entrance();
       let id = world.create_in(Some(entrance));
+      world.register_chat_connect(id, ctx.address());
       self.self_id = Some(id);
       self.send_to_client(&ServerMessage::new(&format!("You are object {}", id)), ctx);
     });
@@ -45,9 +46,9 @@ impl ChatSocket {
     let message: ClientMessage = serde_json::from_str(&text)?;
     self.app_data.world_ref.read(|world| {
       if let Some(container) = world.parent(self.self_id.unwrap()) {
-        world.message(container, Message::Say { text: message.text });
+        world.send_message(container, ObjectMessage::Say { text: message.text });
       } else {
-        self.send_to_client(&ServerMessage::new(&format!("You aren't anywhere.",)), ctx);
+        self.send_to_client(&ServerMessage::new("You aren't anywhere."), ctx);
       }
     });
     Ok(())
@@ -64,30 +65,43 @@ impl ChatSocket {
   }
 }
 
+impl Handler<ServerMessage> for ChatSocket {
+  type Result = ();
+
+  fn handle(&mut self, msg: ServerMessage, ctx: &mut ws::WebsocketContext<Self>) {
+    self.send_to_client(&msg, ctx);
+  }
+}
+
 pub struct AppState {
   pub world: Arc<RwLock<Option<World>>>,
   pub world_ref: WorldRef,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 struct ClientMessage {
   id: String,
   text: String,
 }
 
-#[derive(Serialize, Deserialize)]
-struct ServerMessage {
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct ServerMessage {
   id: String,
   text: String,
 }
 
 impl ServerMessage {
-  fn new(text: &str) -> ServerMessage {
+  pub fn new(text: &str) -> ServerMessage {
     ServerMessage {
       id: Uuid::new_v4().to_string(),
       text: text.to_string(),
     }
   }
+}
+
+// TODO: Consider separating "messages we send to client" from "messages other objects send to chat socket"
+impl Message for ServerMessage {
+  type Result = ();
 }
 
 impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for ChatSocket {
