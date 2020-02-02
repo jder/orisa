@@ -31,7 +31,6 @@ pub struct World {
   own_ref: WorldRef,
 
   chat_connections: MultiMap<Id, Addr<ChatSocket>>,
-  users: HashMap<String, Id>,
 
   actors: HashMap<Id, Addr<ObjectActor>>,
 }
@@ -40,6 +39,7 @@ pub struct World {
 struct WorldState {
   objects: Vec<Object>,
   entrance_id: Option<Id>, // only None during initialization
+  users: HashMap<String, Id>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -112,18 +112,18 @@ impl World {
   }
 
   pub fn get_or_create_user(&mut self, username: &str) -> Id {
-    if let Some(id) = self.users.get(username) {
+    if let Some(id) = self.state.users.get(username) {
       *id
     } else {
       let entrance = self.entrance();
       let id = self.create_in(Some(entrance));
-      self.users.insert(username.to_string(), id);
+      self.state.users.insert(username.to_string(), id);
       id
     }
   }
 
   pub fn username(&self, id: Id) -> String {
-    for (key, value) in self.users.iter() {
+    for (key, value) in self.state.users.iter() {
       if *value == id {
         return key.to_string();
       }
@@ -187,11 +187,11 @@ impl World {
       state: WorldState {
         objects: vec![],
         entrance_id: None,
+        users: HashMap::new(),
       },
       arbiter: arbiter,
       own_ref: world_ref.clone(),
       chat_connections: MultiMap::new(),
-      users: HashMap::new(),
       actors: HashMap::new(),
     };
     world.create_defaults();

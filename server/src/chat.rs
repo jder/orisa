@@ -1,12 +1,11 @@
 use crate::object_actor::{ObjectMessage, ObjectMessagePayload};
-use crate::world::{Id, World, WorldRef};
+use crate::world::{Id, WorldRef};
 use actix::{Actor, AsyncContext, Handler, Message, StreamHandler};
 use actix_web::web;
 use actix_web_actors::ws;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use serde_json;
-use std::sync::{Arc, RwLock};
 use uuid::Uuid;
 
 pub struct ChatSocket {

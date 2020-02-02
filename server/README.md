@@ -3,12 +3,11 @@
 Running
 
 ```
-RUST_LOG=INFO systemfd --no-pid -s http::8080 -- cargo watch -x run
+RUST_BACKTRACE=1 RUST_LOG=INFO systemfd --no-pid -s http::8080 -- cargo watch -x run
 ```
 
 # MVP
 
-* Trivial login
 * Object types + state dict
 * Save & load world + object state
 * Run Lua code per type, exposing state, messaging, and world primitives

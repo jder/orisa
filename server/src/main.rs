@@ -3,14 +3,15 @@ mod object_actor;
 mod world;
 
 use crate::chat::{AppState, ChatSocket};
-use crate::world::{World, WorldRef};
+use crate::world::World;
 use actix::Arbiter;
 use actix_web::middleware::Logger;
 use actix_web::{web, App, HttpRequest, HttpResponse, HttpServer, Responder};
 use actix_web_actors::ws;
+use futures::executor;
 use listenfd::ListenFd;
 use log::info;
-use std::fs::File;
+use std::fs::{copy, rename, File};
 use std::path::Path;
 
 async fn index() -> impl Responder {
@@ -36,20 +37,38 @@ fn main() -> Result<(), std::io::Error> {
     res
 }
 
+fn load_world(world: &mut World) -> std::io::Result<()> {
+    let path = Path::new("world.json");
+    if let Ok(file) = File::open(&path) {
+        if let Err(err) = world.load(file) {
+            log::error!("Unable to load world: {}", err);
+        }
+    }
+    Ok(())
+}
+
+fn save_world(world: &mut World) -> std::io::Result<()> {
+    let temp_path = Path::new("world-out.json");
+    let file = File::create(&temp_path)?;
+    world.save(file).unwrap();
+
+    let final_path = Path::new("world.json");
+    copy(final_path, Path::new("world.bak.json"))?;
+    rename(temp_path, final_path)?;
+    Ok(())
+}
+
 async fn run_server() -> Result<(), std::io::Error> {
     let arbiter = Arbiter::new();
 
-    let (world, world_ref) = World::new(arbiter.clone());
+    let (_world, world_ref) = World::new(arbiter.clone());
 
-    let path = Path::new("world.json");
-    if let Ok(file) = File::open(&path) {
-        world_ref.write(|w| {
-            w.load(file).unwrap();
-        })
-    }
+    world_ref.write(|w| {
+        load_world(w).unwrap();
+    });
 
     let data = web::Data::new(AppState {
-        world_ref: world_ref,
+        world_ref: world_ref.clone(),
     });
 
     let mut listenfd = ListenFd::from_env();
@@ -61,7 +80,8 @@ async fn run_server() -> Result<(), std::io::Error> {
             .route("/", web::get().to(index))
             .route("/api/socket", web::get().to(socket))
     })
-    .shutdown_timeout(1);
+    .shutdown_timeout(1)
+    .disable_signals();
 
     server = if let Some(l) = listenfd.take_tcp_listener(0).unwrap() {
         server.listen(l)?
@@ -71,5 +91,15 @@ async fn run_server() -> Result<(), std::io::Error> {
 
     info!("Starting!");
 
-    server.run().await
+    let running = server.run();
+
+    let srv = running.clone();
+    ctrlc::set_handler(move || {
+        info!("Asking for stop!");
+        world_ref.write(|w| save_world(w).unwrap());
+        executor::block_on(srv.stop(true));
+    })
+    .expect("Error setting Ctrl-C handler");
+
+    running.await
 }
