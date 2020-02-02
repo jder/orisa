@@ -2,11 +2,14 @@ use crate::chat::{ChatSocket, ServerMessage};
 use crate::object_actor::*;
 use actix::{Actor, Addr, Arbiter};
 use multimap::MultiMap;
+use serde::{Deserialize, Serialize};
+use serde_json;
 use std::collections::HashMap;
 use std::fmt;
+use std::io::{Read, Write};
 use std::sync::{Arc, RwLock, Weak};
 
-#[derive(Debug, PartialEq, Clone, Copy, Hash, Eq)]
+#[derive(Debug, PartialEq, Clone, Copy, Hash, Eq, Deserialize, Serialize)]
 pub struct Id(usize);
 
 impl fmt::Display for Id {
@@ -15,22 +18,34 @@ impl fmt::Display for Id {
   }
 }
 
+#[derive(Serialize, Deserialize, Clone)]
 struct Object {
   id: Id,
   parent_id: Option<Id>,
-
-  address: Addr<ObjectActor>,
 }
 
 pub struct World {
-  objects: Vec<Object>,
-  entrance_id: Option<Id>, // only None during initialization
+  state: WorldState,
 
   arbiter: Arbiter,
   own_ref: WorldRef,
 
   chat_connections: MultiMap<Id, Addr<ChatSocket>>,
   users: HashMap<String, Id>,
+
+  actors: HashMap<Id, Addr<ObjectActor>>,
+}
+
+#[derive(Serialize, Deserialize, Clone)]
+struct WorldState {
+  objects: Vec<Object>,
+  entrance_id: Option<Id>, // only None during initialization
+}
+
+#[derive(Serialize, Deserialize)]
+struct SaveState {
+  world_state: WorldState,
+  actor_state: HashMap<Id, ObjectActorState>,
 }
 
 /// Weak reference to the world for use by ObjectActors
@@ -65,7 +80,7 @@ impl WorldRef {
 
 impl World {
   pub fn create_in(&mut self, parent: Option<Id>) -> Id {
-    let id = Id(self.objects.len());
+    let id = Id(self.state.objects.len());
 
     let world_ref = self.own_ref.clone();
     let addr =
@@ -74,9 +89,9 @@ impl World {
     let o = Object {
       id: id,
       parent_id: parent,
-      address: addr,
     };
-    self.objects.push(o);
+    self.actors.insert(id, addr);
+    self.state.objects.push(o);
     id
   }
 
@@ -93,7 +108,7 @@ impl World {
   }
 
   pub fn entrance(&self) -> Id {
-    self.entrance_id.unwrap()
+    self.state.entrance_id.unwrap()
   }
 
   pub fn get_or_create_user(&mut self, username: &str) -> Id {
@@ -118,6 +133,7 @@ impl World {
 
   pub fn children(&self, id: Id) -> impl Iterator<Item = Id> + '_ {
     self
+      .state
       .objects
       .iter()
       .filter(move |o| o.parent_id == Some(id))
@@ -125,11 +141,11 @@ impl World {
   }
 
   pub fn parent(&self, of: Id) -> Option<Id> {
-    self.objects.get(of.0).unwrap().parent_id
+    self.get(of).parent_id
   }
 
   pub fn send_message(&self, id: Id, message: ObjectMessage) {
-    self.get(id).address.do_send(message)
+    self.actors.get(&id).unwrap().do_send(message)
   }
 
   pub fn send_client_message(&self, id: Id, message: ServerMessage) {
@@ -147,17 +163,17 @@ impl World {
   }
 
   fn get(&self, id: Id) -> &Object {
-    self.objects.get(id.0).unwrap()
+    self.state.objects.get(id.0).unwrap()
   }
 
   #[allow(dead_code)]
   fn get_mut(&mut self, id: Id) -> &mut Object {
-    self.objects.get_mut(id.0).unwrap()
+    self.state.objects.get_mut(id.0).unwrap()
   }
 
   fn create_defaults(&mut self) {
     let entrance = self.create_in(None);
-    self.entrance_id = Some(entrance)
+    self.state.entrance_id = Some(entrance)
   }
 
   pub fn new(arbiter: Arbiter) -> (Arc<RwLock<Option<World>>>, WorldRef) {
@@ -168,12 +184,15 @@ impl World {
     };
 
     let mut world = World {
-      objects: vec![],
-      entrance_id: None,
+      state: WorldState {
+        objects: vec![],
+        entrance_id: None,
+      },
       arbiter: arbiter,
       own_ref: world_ref.clone(),
       chat_connections: MultiMap::new(),
       users: HashMap::new(),
+      actors: HashMap::new(),
     };
     world.create_defaults();
 
@@ -182,5 +201,21 @@ impl World {
       *maybe_world = Some(world);
     }
     (arc, world_ref)
+  }
+
+  pub fn save(&self, w: impl Write) -> Result<(), serde_json::Error> {
+    let state = SaveState {
+      world_state: self.state.clone(),
+      actor_state: HashMap::new(), // TODO
+    };
+
+    serde_json::to_writer_pretty(w, &state)
+  }
+
+  pub fn load(&mut self, r: impl Read) -> Result<(), serde_json::Error> {
+    let state: SaveState = serde_json::from_reader(r)?;
+    self.state = state.world_state;
+    // TODO actors
+    Ok(())
   }
 }

@@ -1,17 +1,17 @@
+mod chat;
+mod object_actor;
+mod world;
+
+use crate::chat::{AppState, ChatSocket};
+use crate::world::{World, WorldRef};
 use actix::Arbiter;
 use actix_web::middleware::Logger;
 use actix_web::{web, App, HttpRequest, HttpResponse, HttpServer, Responder};
-
 use actix_web_actors::ws;
 use listenfd::ListenFd;
 use log::info;
-
-mod object_actor;
-mod world;
-use crate::world::World;
-
-mod chat;
-use crate::chat::{AppState, ChatSocket};
+use std::fs::File;
+use std::path::Path;
 
 async fn index() -> impl Responder {
     HttpResponse::Ok().body("Hello world!")
@@ -26,16 +26,29 @@ async fn socket(
     res
 }
 
-#[actix_rt::main]
-async fn main() -> std::io::Result<()> {
+fn main() -> Result<(), std::io::Error> {
     env_logger::init();
 
+    let res = actix_rt::System::new("main").block_on(run_server());
+
+    info!("Stopping");
+
+    res
+}
+
+async fn run_server() -> Result<(), std::io::Error> {
     let arbiter = Arbiter::new();
 
     let (world, world_ref) = World::new(arbiter.clone());
 
+    let path = Path::new("world.json");
+    if let Ok(file) = File::open(&path) {
+        world_ref.write(|w| {
+            w.load(file).unwrap();
+        })
+    }
+
     let data = web::Data::new(AppState {
-        world: world,
         world_ref: world_ref,
     });
 
@@ -48,7 +61,7 @@ async fn main() -> std::io::Result<()> {
             .route("/", web::get().to(index))
             .route("/api/socket", web::get().to(socket))
     })
-    .shutdown_timeout(5);
+    .shutdown_timeout(1);
 
     server = if let Some(l) = listenfd.take_tcp_listener(0).unwrap() {
         server.listen(l)?

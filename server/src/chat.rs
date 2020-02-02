@@ -115,7 +115,6 @@ impl Handler<ServerMessage> for ChatSocket {
 }
 
 pub struct AppState {
-  pub world: Arc<RwLock<Option<World>>>,
   pub world_ref: WorldRef,
 }
 

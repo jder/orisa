@@ -1,11 +1,15 @@
 use crate::chat::ServerMessage;
 use crate::world::*;
 use actix::{Actor, Context, Handler, Message};
+use serde::{Deserialize, Serialize};
 
 pub struct ObjectActor {
   id: Id,
   world: WorldRef,
 }
+
+#[derive(Serialize, Deserialize)]
+pub struct ObjectActorState {}
 
 impl ObjectActor {
   pub fn new(id: Id, world_ref: WorldRef) -> ObjectActor {
