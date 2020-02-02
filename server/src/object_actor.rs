@@ -8,11 +8,11 @@ pub struct ObjectActor {
   world: WorldRef,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct ObjectActorState {}
 
 impl ObjectActor {
-  pub fn new(id: Id, world_ref: WorldRef) -> ObjectActor {
+  pub fn new(id: Id, world_ref: WorldRef, state: Option<ObjectActorState>) -> ObjectActor {
     ObjectActor {
       id: id,
       world: world_ref,
@@ -49,6 +49,17 @@ impl Handler<ObjectMessage> for ObjectActor {
         .world
         .read(|w| w.send_client_message(self.id, ServerMessage::new(&text))),
     }
+  }
+}
+
+impl Handler<FreezeMessage> for ObjectActor {
+  type Result = Option<FreezeResponse>;
+
+  fn handle(&mut self, _msg: FreezeMessage, _ctx: &mut Self::Context) -> Option<FreezeResponse> {
+    Some(FreezeResponse {
+      id: self.id,
+      state: ObjectActorState {},
+    })
   }
 }
 

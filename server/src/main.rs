@@ -3,7 +3,7 @@ mod object_actor;
 mod world;
 
 use crate::chat::{AppState, ChatSocket};
-use crate::world::World;
+use crate::world::{World, WorldRef};
 use actix::Arbiter;
 use actix_web::middleware::Logger;
 use actix_web::{web, App, HttpRequest, HttpResponse, HttpServer, Responder};
@@ -37,20 +37,18 @@ fn main() -> Result<(), std::io::Error> {
     res
 }
 
-fn load_world(world: &mut World) -> std::io::Result<()> {
+fn load_world(world: &mut World) -> Result<(), serde_json::Error> {
     let path = Path::new("world.json");
     if let Ok(file) = File::open(&path) {
-        if let Err(err) = world.load(file) {
-            log::error!("Unable to load world: {}", err);
-        }
+        world.unfreeze_read(file)?
     }
     Ok(())
 }
 
-fn save_world(world: &mut World) -> std::io::Result<()> {
+fn save_world(world_ref: WorldRef) -> std::io::Result<()> {
     let temp_path = Path::new("world-out.json");
     let file = File::create(&temp_path)?;
-    world.save(file).unwrap();
+    World::freeze(world_ref, file).unwrap();
 
     let final_path = Path::new("world.json");
     copy(final_path, Path::new("world.bak.json"))?;
@@ -64,7 +62,9 @@ async fn run_server() -> Result<(), std::io::Error> {
     let (_world, world_ref) = World::new(arbiter.clone());
 
     world_ref.write(|w| {
-        load_world(w).unwrap();
+        if load_world(w).is_err() {
+            w.unfreeze_empty(); // start from scratch
+        }
     });
 
     let data = web::Data::new(AppState {
@@ -96,7 +96,7 @@ async fn run_server() -> Result<(), std::io::Error> {
     let srv = running.clone();
     ctrlc::set_handler(move || {
         info!("Asking for stop!");
-        world_ref.write(|w| save_world(w).unwrap());
+        save_world(world_ref.clone()).unwrap();
         executor::block_on(srv.stop(true));
     })
     .expect("Error setting Ctrl-C handler");

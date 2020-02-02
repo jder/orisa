@@ -1,6 +1,9 @@
 use crate::chat::{ChatSocket, ServerMessage};
 use crate::object_actor::*;
-use actix::{Actor, Addr, Arbiter};
+use actix::{Actor, Addr, Arbiter, Message};
+use futures::executor;
+use futures::stream::FuturesUnordered;
+use futures::stream::StreamExt;
 use multimap::MultiMap;
 use serde::{Deserialize, Serialize};
 use serde_json;
@@ -33,10 +36,12 @@ pub struct World {
   chat_connections: MultiMap<Id, Addr<ChatSocket>>,
 
   actors: HashMap<Id, Addr<ObjectActor>>,
+
+  frozen: bool,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
-struct WorldState {
+pub struct WorldState {
   objects: Vec<Object>,
   entrance_id: Option<Id>, // only None during initialization
   users: HashMap<String, Id>,
@@ -83,8 +88,9 @@ impl World {
     let id = Id(self.state.objects.len());
 
     let world_ref = self.own_ref.clone();
-    let addr =
-      ObjectActor::start_in_arbiter(&self.arbiter, move |_ctx| ObjectActor::new(id, world_ref));
+    let addr = ObjectActor::start_in_arbiter(&self.arbiter, move |_ctx| {
+      ObjectActor::new(id, world_ref, None)
+    });
 
     let o = Object {
       id: id,
@@ -145,7 +151,15 @@ impl World {
   }
 
   pub fn send_message(&self, id: Id, message: ObjectMessage) {
-    self.actors.get(&id).unwrap().do_send(message)
+    assert!(
+      !self.frozen,
+      "you cannot send messages while the world is frozen; see freeze_world below"
+    );
+    self
+      .actors
+      .get(&id)
+      .expect("Can't find actor for given actor id")
+      .do_send(message)
   }
 
   pub fn send_client_message(&self, id: Id, message: ServerMessage) {
@@ -193,6 +207,7 @@ impl World {
       own_ref: world_ref.clone(),
       chat_connections: MultiMap::new(),
       actors: HashMap::new(),
+      frozen: true,
     };
     world.create_defaults();
 
@@ -203,19 +218,80 @@ impl World {
     (arc, world_ref)
   }
 
-  pub fn save(&self, w: impl Write) -> Result<(), serde_json::Error> {
+  pub fn freeze(world_ref: WorldRef, w: impl Write) -> Result<(), serde_json::Error> {
+    let future = world_ref.write(|w| {
+      // tells actors to queue future messages
+      // do this first so that as we freeze them they can finish their current mailbox
+      // and the freeze message below is guaranteed to be the last message.
+      // the actors kill themselves at this point, and we then remove them from our list of
+      // all actors and grab the final world state (which might be edited while the actors
+      // spin down.)
+      w.frozen = true;
+
+      w.actors
+        .iter()
+        .map(|(_id, addr)| addr.send(FreezeMessage {}))
+        .collect::<FuturesUnordered<actix::prelude::Request<ObjectActor, FreezeMessage>>>()
+        .collect::<Vec<_>>()
+    });
+
+    let all_states = executor::block_on(future);
+
+    let state = world_ref.write(|w| {
+      w.actors.clear();
+      w.state.clone()
+    });
+
     let state = SaveState {
-      world_state: self.state.clone(),
-      actor_state: HashMap::new(), // TODO
+      world_state: state,
+      actor_state: all_states
+        .iter()
+        .map(|resp| {
+          let response = resp.as_ref().unwrap().as_ref().unwrap(); // surely there is a better way
+          (response.id, response.state.clone())
+        })
+        .collect(),
     };
 
     serde_json::to_writer_pretty(w, &state)
   }
 
-  pub fn load(&mut self, r: impl Read) -> Result<(), serde_json::Error> {
+  pub fn unfreeze_read(&mut self, r: impl Read) -> Result<(), serde_json::Error> {
+    assert!(self.frozen, "can only unfreeze when frozen");
+
     let state: SaveState = serde_json::from_reader(r)?;
     self.state = state.world_state;
-    // TODO actors
+
+    for obj in self.state.objects.iter() {
+      let id = obj.id;
+      let world_ref = self.own_ref.clone();
+      let object_state = state.actor_state.get(&id).map(|state| state.clone());
+      let addr = ObjectActor::start_in_arbiter(&self.arbiter, move |_ctx| {
+        ObjectActor::new(id, world_ref, object_state)
+      });
+      self.actors.insert(id, addr);
+    }
+
+    self.frozen = false;
     Ok(())
   }
+
+  pub fn unfreeze_empty(&mut self) {
+    assert!(self.frozen, "can only unfreeze when frozen");
+    assert!(
+      self.state.objects.len() == 0,
+      "can only unfreeze_empty an empty world; use unfreeze_read"
+    );
+    self.frozen = false;
+  }
+}
+
+pub struct FreezeMessage {}
+pub struct FreezeResponse {
+  pub id: Id,
+  pub state: ObjectActorState,
+}
+
+impl Message for FreezeMessage {
+  type Result = Option<FreezeResponse>;
 }
