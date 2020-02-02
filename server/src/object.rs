@@ -4,6 +4,7 @@ use std::fmt;
 use crate::chat::{ChatSocket, ServerMessage};
 
 use multimap::MultiMap;
+use std::collections::HashMap;
 
 use std::sync::{Arc, RwLock, Weak};
 #[derive(Debug, PartialEq, Clone, Copy, Hash, Eq)]
@@ -38,13 +39,14 @@ impl Handler<ObjectMessage> for ObjectActor {
     let sender = msg.immediate_sender;
     match msg.payload {
       ObjectMessagePayload::Say { text } => self.world.read(|w| {
+        let name = w.username(sender);
         w.children(self.id).for_each(|child| {
           w.send_message(
             child,
             ObjectMessage {
               immediate_sender: self.id,
               payload: ObjectMessagePayload::Broadcast {
-                text: format!("{}: {}", sender, text.clone()),
+                text: format!("{}: {}", name, text.clone()),
               },
             },
           )
@@ -66,6 +68,7 @@ pub struct World {
   own_ref: WorldRef,
 
   chat_connections: MultiMap<Id, Addr<ChatSocket>>,
+  users: HashMap<String, Id>,
 }
 
 /// Weak reference to the world for use by ObjectActors
@@ -133,6 +136,26 @@ impl World {
     self.entrance_id.unwrap()
   }
 
+  pub fn get_or_create_user(&mut self, username: &str) -> Id {
+    if let Some(id) = self.users.get(username) {
+      *id
+    } else {
+      let entrance = self.entrance();
+      let id = self.create_in(Some(entrance));
+      self.users.insert(username.to_string(), id);
+      id
+    }
+  }
+
+  pub fn username(&self, id: Id) -> String {
+    for (key, value) in self.users.iter() {
+      if *value == id {
+        return key.to_string();
+      }
+    }
+    return id.to_string();
+  }
+
   pub fn children(&self, id: Id) -> impl Iterator<Item = Id> + '_ {
     self
       .objects
@@ -190,6 +213,7 @@ impl World {
       arbiter: arbiter,
       own_ref: world_ref.clone(),
       chat_connections: MultiMap::new(),
+      users: HashMap::new(),
     };
     world.create_defaults();
 

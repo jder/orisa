@@ -4,6 +4,7 @@ use actix_web_actors::ws;
 use serde::{Deserialize, Serialize};
 use serde_json;
 
+use regex::Regex;
 use std::sync::{Arc, RwLock};
 use uuid::Uuid;
 
@@ -17,26 +18,18 @@ pub struct ChatSocket {
 impl Actor for ChatSocket {
   type Context = ws::WebsocketContext<Self>;
 
-  fn started(&mut self, ctx: &mut Self::Context) {
-    let world_ref = self.app_data.world_ref.clone();
-    world_ref.write(|world| {
-      let entrance = world.entrance();
-      let id = world.create_in(Some(entrance));
-      world.register_chat_connect(id, ctx.address());
-      self.self_id = Some(id);
-      self
-        .send_to_client(&ServerMessage::new(&format!("You are object {}", id)), ctx)
-        .unwrap();
-      log::info!("ChatSocket stared with id {}", id);
-    });
+  fn started(&mut self, _ctx: &mut Self::Context) {
+    log::info!("ChatSocket stared");
   }
 
   fn stopped(&mut self, ctx: &mut Self::Context) {
-    self
-      .app_data
-      .world_ref
-      .write(|world| world.remove_chat_connection(self.self_id.unwrap(), ctx.address()));
-    log::info!("ChatSocket stopped for id {}", self.self_id.unwrap());
+    if let Some(id) = self.self_id {
+      self
+        .app_data
+        .world_ref
+        .write(|world| world.remove_chat_connection(id, ctx.address()));
+      log::info!("ChatSocket stopped for id {}", id);
+    }
   }
 }
 
@@ -49,26 +42,53 @@ impl ChatSocket {
   }
 
   fn handle_message(
-    &self,
+    &mut self,
     text: &str,
     ctx: &mut ws::WebsocketContext<Self>,
   ) -> Result<(), serde_json::error::Error> {
     let message: ClientMessage = serde_json::from_str(&text)?;
-    self.app_data.world_ref.read(|world| {
-      if let Some(container) = world.parent(self.id()) {
-        world.send_message(
-          container,
-          ObjectMessage {
-            immediate_sender: self.id(),
-            payload: ObjectMessagePayload::Say { text: message.text },
-          },
-        );
-      } else {
+
+    let login_regex = Regex::new(" */login +([[:alpha:]]+)").unwrap();
+    if let Some(caps) = login_regex.captures(&message.text) {
+      let world_ref = self.app_data.world_ref.clone();
+      world_ref.write(|world| {
+        let id = world.get_or_create_user(caps.get(1).unwrap().as_str());
+
+        if let Some(existing_id) = self.self_id {
+          world.remove_chat_connection(existing_id, ctx.address());
+        }
+
+        world.register_chat_connect(id, ctx.address());
+        self.self_id = Some(id);
         self
-          .send_to_client(&ServerMessage::new("You aren't anywhere."), ctx)
+          .send_to_client(&ServerMessage::new(&format!("You are object {}", id)), ctx)
           .unwrap();
-      }
-    });
+      });
+    } else if self.self_id.is_none() {
+      self
+        .send_to_client(
+          &ServerMessage::new(&format!("Please `/login username` first")),
+          ctx,
+        )
+        .unwrap();
+    } else {
+      self.app_data.world_ref.read(|world| {
+        if let Some(container) = world.parent(self.id()) {
+          world.send_message(
+            container,
+            ObjectMessage {
+              immediate_sender: self.id(),
+              payload: ObjectMessagePayload::Say { text: message.text },
+            },
+          );
+        } else {
+          self
+            .send_to_client(&ServerMessage::new("You aren't anywhere."), ctx)
+            .unwrap();
+        }
+      });
+    }
+
     Ok(())
   }
 
