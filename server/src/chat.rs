@@ -5,25 +5,27 @@ use serde::{Deserialize, Serialize};
 use serde_json;
 use std::error::Error;
 
-use std::sync::Mutex;
+use std::sync::{Arc, RwLock};
 use uuid::Uuid;
 
-use crate::object;
+use crate::object::{Id, Message, World, WorldRef};
 
 pub struct ChatSocket {
   app_data: web::Data<AppState>,
-  self_id: Option<object::Id>,
+  self_id: Option<Id>,
 }
 
 impl Actor for ChatSocket {
   type Context = ws::WebsocketContext<Self>;
 
   fn started(&mut self, ctx: &mut Self::Context) {
-    let mut world = self.app_data.world.lock().unwrap();
-    let entrance = world.entrance();
-    let id = world.create_in(entrance);
-    self.self_id = Some(id);
-    self.send(&ServerMessage::new(&format!("You are object {}", id)), ctx);
+    let world_ref = self.app_data.world_ref.clone();
+    world_ref.write(|world| {
+      let entrance = world.entrance();
+      let id = world.create_in(Some(entrance));
+      self.self_id = Some(id);
+      self.send_to_client(&ServerMessage::new(&format!("You are object {}", id)), ctx);
+    });
   }
 }
 
@@ -41,23 +43,17 @@ impl ChatSocket {
     ctx: &mut ws::WebsocketContext<Self>,
   ) -> Result<(), serde_json::error::Error> {
     let message: ClientMessage = serde_json::from_str(&text)?;
-    let mut world = self.app_data.world.lock().unwrap();
-    let container = world.container(self.self_id);
-  
-    world.message(container, )
-
-    self.send(
-      &ServerMessage::new(&format!(
-        "Object {} is saying {}",
-        self.self_id.unwrap(),
-        message.text
-      )),
-      ctx,
-    );
+    self.app_data.world_ref.read(|world| {
+      if let Some(container) = world.parent(self.self_id.unwrap()) {
+        world.message(container, Message::Say { text: message.text });
+      } else {
+        self.send_to_client(&ServerMessage::new(&format!("You aren't anywhere.",)), ctx);
+      }
+    });
     Ok(())
   }
 
-  fn send(
+  fn send_to_client(
     &self,
     message: &ServerMessage,
     ctx: &mut ws::WebsocketContext<Self>,
@@ -69,8 +65,8 @@ impl ChatSocket {
 }
 
 pub struct AppState {
-  pub arbiter: Arbiter,
-  pub world: Mutex<object::World>,
+  pub world: Arc<RwLock<Option<World>>>,
+  pub world_ref: WorldRef,
 }
 
 #[derive(Serialize, Deserialize)]

@@ -5,7 +5,6 @@ use actix_web::{web, App, HttpRequest, HttpResponse, HttpServer, Responder};
 use actix_web_actors::ws;
 use listenfd::ListenFd;
 use log::info;
-use std::sync::Mutex;
 
 mod object;
 use crate::object::World;
@@ -32,9 +31,11 @@ async fn main() -> std::io::Result<()> {
 
     let arbiter = Arbiter::new();
 
+    let (world, world_ref) = World::new(arbiter.clone());
+
     let data = web::Data::new(AppState {
-        arbiter: arbiter.clone(),
-        world: Mutex::new(World::new(arbiter.clone())),
+        world: world,
+        world_ref: world_ref,
     });
 
     let mut listenfd = ListenFd::from_env();
