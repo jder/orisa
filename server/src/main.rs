@@ -30,9 +30,11 @@ async fn socket(
 async fn main() -> std::io::Result<()> {
     env_logger::init();
 
+    let arbiter = Arbiter::new();
+
     let data = web::Data::new(AppState {
-        arbiter: Arbiter::new(),
-        world: Mutex::new(World::new()),
+        arbiter: arbiter.clone(),
+        world: Mutex::new(World::new(arbiter.clone())),
     });
 
     let mut listenfd = ListenFd::from_env();

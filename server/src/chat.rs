@@ -20,7 +20,8 @@ impl Actor for ChatSocket {
 
   fn started(&mut self, ctx: &mut Self::Context) {
     let mut world = self.app_data.world.lock().unwrap();
-    let id = world.create();
+    let entrance = world.entrance();
+    let id = world.create_in(entrance);
     self.self_id = Some(id);
     self.send(&ServerMessage::new(&format!("You are object {}", id)), ctx);
   }
@@ -40,6 +41,11 @@ impl ChatSocket {
     ctx: &mut ws::WebsocketContext<Self>,
   ) -> Result<(), serde_json::error::Error> {
     let message: ClientMessage = serde_json::from_str(&text)?;
+    let mut world = self.app_data.world.lock().unwrap();
+    let container = world.container(self.self_id);
+  
+    world.message(container, )
+
     self.send(
       &ServerMessage::new(&format!(
         "Object {} is saying {}",
