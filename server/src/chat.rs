@@ -1,9 +1,8 @@
-use actix::{Actor, Arbiter, AsyncContext, Handler, Message, StreamHandler};
-use actix_web::{web, App, HttpRequest, HttpResponse, HttpServer, Responder};
+use actix::{Actor, AsyncContext, Handler, Message, StreamHandler};
+use actix_web::web;
 use actix_web_actors::ws;
 use serde::{Deserialize, Serialize};
 use serde_json;
-use std::error::Error;
 
 use std::sync::{Arc, RwLock};
 use uuid::Uuid;
@@ -25,7 +24,9 @@ impl Actor for ChatSocket {
       let id = world.create_in(Some(entrance));
       world.register_chat_connect(id, ctx.address());
       self.self_id = Some(id);
-      self.send_to_client(&ServerMessage::new(&format!("You are object {}", id)), ctx);
+      self
+        .send_to_client(&ServerMessage::new(&format!("You are object {}", id)), ctx)
+        .unwrap();
       log::info!("ChatSocket stared with id {}", id);
     });
   }
@@ -63,7 +64,9 @@ impl ChatSocket {
           },
         );
       } else {
-        self.send_to_client(&ServerMessage::new("You aren't anywhere."), ctx);
+        self
+          .send_to_client(&ServerMessage::new("You aren't anywhere."), ctx)
+          .unwrap();
       }
     });
     Ok(())
@@ -88,7 +91,7 @@ impl Handler<ServerMessage> for ChatSocket {
   type Result = ();
 
   fn handle(&mut self, msg: ServerMessage, ctx: &mut ws::WebsocketContext<Self>) {
-    self.send_to_client(&msg, ctx);
+    self.send_to_client(&msg, ctx).unwrap();
   }
 }
 
@@ -128,7 +131,7 @@ impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for ChatSocket {
     match msg {
       Ok(ws::Message::Ping(msg)) => ctx.pong(&msg),
       Ok(ws::Message::Text(text)) => {
-        self.handle_message(&text, ctx);
+        self.handle_message(&text, ctx).unwrap();
       }
       Ok(ws::Message::Binary(bin)) => ctx.binary(bin),
       _ => (),

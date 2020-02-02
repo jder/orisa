@@ -1,4 +1,4 @@
-use actix::{Actor, Arbiter, StreamHandler};
+use actix::Arbiter;
 use actix_web::middleware::Logger;
 use actix_web::{web, App, HttpRequest, HttpResponse, HttpServer, Responder};
 

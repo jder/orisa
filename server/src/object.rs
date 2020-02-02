@@ -34,7 +34,7 @@ impl Actor for ObjectActor {
 impl Handler<ObjectMessage> for ObjectActor {
   type Result = ();
 
-  fn handle(&mut self, msg: ObjectMessage, ctx: &mut Self::Context) {
+  fn handle(&mut self, msg: ObjectMessage, _ctx: &mut Self::Context) {
     let sender = msg.immediate_sender;
     match msg.payload {
       ObjectMessagePayload::Say { text } => self.world.read(|w| {
@@ -167,6 +167,7 @@ impl World {
     self.objects.get(id.0).unwrap()
   }
 
+  #[allow(dead_code)]
   fn get_mut(&mut self, id: Id) -> &mut Object {
     self.objects.get_mut(id.0).unwrap()
   }
