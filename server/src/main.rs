@@ -1,8 +1,13 @@
 mod chat;
 mod object_actor;
+mod util;
 mod world;
 
+#[macro_use]
+extern crate lazy_static;
+
 use crate::chat::{AppState, ChatSocket};
+use crate::util::ResultAnyError;
 use crate::world::{World, WorldRef};
 use actix::Arbiter;
 use actix_web::middleware::Logger;
@@ -37,21 +42,20 @@ fn main() -> Result<(), std::io::Error> {
     res
 }
 
-fn load_world(world: &mut World) -> Result<(), serde_json::Error> {
+fn load_world(world: &mut World) -> ResultAnyError<()> {
     let path = Path::new("world.json");
-    if let Ok(file) = File::open(&path) {
-        world.unfreeze_read(file)?
-    }
+    let file = File::open(&path)?;
+    world.unfreeze_read(file)?;
     Ok(())
 }
 
-fn save_world(world_ref: WorldRef) -> std::io::Result<()> {
+fn save_world(world_ref: WorldRef) -> ResultAnyError<()> {
     let temp_path = Path::new("world-out.json");
     let file = File::create(&temp_path)?;
     World::freeze(world_ref, file).unwrap();
 
     let final_path = Path::new("world.json");
-    copy(final_path, Path::new("world.bak.json"))?;
+    let _ = copy(final_path, Path::new("world.bak.json")); // ignore result
     rename(temp_path, final_path)?;
     Ok(())
 }

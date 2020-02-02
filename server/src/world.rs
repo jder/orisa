@@ -21,10 +21,27 @@ impl fmt::Display for Id {
   }
 }
 
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct ObjectKind(String);
+
+impl ObjectKind {
+  pub fn new(name: &str) -> ObjectKind {
+    ObjectKind(name.to_string())
+  }
+
+  fn user() -> ObjectKind {
+    ObjectKind::new("system/user")
+  }
+  fn room() -> ObjectKind {
+    ObjectKind::new("system/room")
+  }
+}
+
 #[derive(Serialize, Deserialize, Clone)]
 struct Object {
   id: Id,
   parent_id: Option<Id>,
+  kind: ObjectKind,
 }
 
 pub struct World {
@@ -84,7 +101,7 @@ impl WorldRef {
 }
 
 impl World {
-  pub fn create_in(&mut self, parent: Option<Id>) -> Id {
+  pub fn create_in(&mut self, parent: Option<Id>, kind: ObjectKind) -> Id {
     let id = Id(self.state.objects.len());
 
     let world_ref = self.own_ref.clone();
@@ -95,6 +112,7 @@ impl World {
     let o = Object {
       id: id,
       parent_id: parent,
+      kind: kind,
     };
     self.actors.insert(id, addr);
     self.state.objects.push(o);
@@ -122,7 +140,7 @@ impl World {
       *id
     } else {
       let entrance = self.entrance();
-      let id = self.create_in(Some(entrance));
+      let id = self.create_in(Some(entrance), ObjectKind::user());
       self.state.users.insert(username.to_string(), id);
       id
     }
@@ -186,7 +204,7 @@ impl World {
   }
 
   fn create_defaults(&mut self) {
-    let entrance = self.create_in(None);
+    let entrance = self.create_in(None, ObjectKind::room());
     self.state.entrance_id = Some(entrance)
   }
 
@@ -197,7 +215,7 @@ impl World {
       world: Arc::downgrade(&arc),
     };
 
-    let mut world = World {
+    let world = World {
       state: WorldState {
         objects: vec![],
         entrance_id: None,
@@ -209,7 +227,6 @@ impl World {
       actors: HashMap::new(),
       frozen: true,
     };
-    world.create_defaults();
 
     {
       let mut maybe_world = arc.write().unwrap();
@@ -283,6 +300,7 @@ impl World {
       "can only unfreeze_empty an empty world; use unfreeze_read"
     );
     self.frozen = false;
+    self.create_defaults();
   }
 }
 

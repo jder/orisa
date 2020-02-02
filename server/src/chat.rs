@@ -46,8 +46,10 @@ impl ChatSocket {
   ) -> Result<(), serde_json::error::Error> {
     let message: ClientMessage = serde_json::from_str(&text)?;
 
-    let login_regex = Regex::new(" */login +([[:alpha:]]+)").unwrap();
-    if let Some(caps) = login_regex.captures(&message.text) {
+    lazy_static! {
+      static ref LOGIN_REGEX: Regex = Regex::new(" */login +([[:alpha:]]+)").unwrap();
+    }
+    if let Some(caps) = LOGIN_REGEX.captures(&message.text) {
       let world_ref = self.app_data.world_ref.clone();
       world_ref.write(|world| {
         let id = world.get_or_create_user(caps.get(1).unwrap().as_str());
