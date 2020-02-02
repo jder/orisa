@@ -46,7 +46,8 @@ async fn main() -> std::io::Result<()> {
             .wrap(Logger::default())
             .route("/", web::get().to(index))
             .route("/api/socket", web::get().to(socket))
-    });
+    })
+    .shutdown_timeout(5);
 
     server = if let Some(l) = listenfd.take_tcp_listener(0).unwrap() {
         server.listen(l)?

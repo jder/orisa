@@ -23,6 +23,8 @@ export class ChatSocket {
     }
     this.ws.onerror = (event: Event) => {
       console.error("websocket error", event);
+    }
+    this.ws.onclose = (event: CloseEvent) => {
       setTimeout(() => this.connect(), 5000);
     }
     this.ws.onopen = (event: Event) => {
