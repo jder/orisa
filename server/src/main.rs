@@ -6,8 +6,9 @@ use actix_web_actors::ws;
 use listenfd::ListenFd;
 use log::info;
 
-mod object;
-use crate::object::World;
+mod object_actor;
+mod world;
+use crate::world::World;
 
 mod chat;
 use crate::chat::{AppState, ChatSocket};

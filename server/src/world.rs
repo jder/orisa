@@ -1,12 +1,11 @@
-use actix::{Actor, Addr, Arbiter, Context, Handler, Message};
-use std::fmt;
-
 use crate::chat::{ChatSocket, ServerMessage};
-
+use crate::object_actor::*;
+use actix::{Actor, Addr, Arbiter};
 use multimap::MultiMap;
 use std::collections::HashMap;
-
+use std::fmt;
 use std::sync::{Arc, RwLock, Weak};
+
 #[derive(Debug, PartialEq, Clone, Copy, Hash, Eq)]
 pub struct Id(usize);
 
@@ -21,43 +20,6 @@ struct Object {
   parent_id: Option<Id>,
 
   address: Addr<ObjectActor>,
-}
-
-struct ObjectActor {
-  id: Id,
-  world: WorldRef,
-}
-
-impl Actor for ObjectActor {
-  type Context = Context<Self>;
-}
-
-impl Handler<ObjectMessage> for ObjectActor {
-  type Result = ();
-
-  fn handle(&mut self, msg: ObjectMessage, _ctx: &mut Self::Context) {
-    let sender = msg.immediate_sender;
-    match msg.payload {
-      ObjectMessagePayload::Say { text } => self.world.read(|w| {
-        let name = w.username(sender);
-        w.children(self.id).for_each(|child| {
-          w.send_message(
-            child,
-            ObjectMessage {
-              immediate_sender: self.id,
-              payload: ObjectMessagePayload::Broadcast {
-                text: format!("{}: {}", name, text.clone()),
-              },
-            },
-          )
-        })
-      }),
-      //TODO: only handle broadcasts for object types expected to have chat connections (i.e. people)
-      ObjectMessagePayload::Broadcast { text } => self
-        .world
-        .read(|w| w.send_client_message(self.id, ServerMessage::new(&text))),
-    }
-  }
 }
 
 pub struct World {
@@ -106,10 +68,8 @@ impl World {
     let id = Id(self.objects.len());
 
     let world_ref = self.own_ref.clone();
-    let addr = ObjectActor::start_in_arbiter(&self.arbiter, move |_ctx| ObjectActor {
-      id: id,
-      world: world_ref,
-    });
+    let addr =
+      ObjectActor::start_in_arbiter(&self.arbiter, move |_ctx| ObjectActor::new(id, world_ref));
 
     let o = Object {
       id: id,
@@ -223,20 +183,4 @@ impl World {
     }
     (arc, world_ref)
   }
-}
-
-#[derive(Debug)]
-pub struct ObjectMessage {
-  pub immediate_sender: Id,
-  pub payload: ObjectMessagePayload,
-}
-
-#[derive(Debug)]
-pub enum ObjectMessagePayload {
-  Say { text: String },
-  Broadcast { text: String },
-}
-
-impl Message for ObjectMessage {
-  type Result = ();
 }
