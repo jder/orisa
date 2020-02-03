@@ -1,4 +1,5 @@
 use crate::chat::{ChatSocket, ServerMessage};
+use crate::lua::LuaHost;
 use crate::object_actor::*;
 use actix::{Actor, Addr, Arbiter, Message};
 use futures::executor;
@@ -49,6 +50,8 @@ pub struct World {
 
   arbiter: Arbiter,
   own_ref: WorldRef,
+
+  lua_host: LuaHost,
 
   chat_connections: MultiMap<Id, Addr<ChatSocket>>,
 
@@ -105,8 +108,9 @@ impl World {
     let id = Id(self.state.objects.len());
 
     let world_ref = self.own_ref.clone();
+    let host = self.lua_host.clone();
     let addr = ObjectActor::start_in_arbiter(&self.arbiter, move |_ctx| {
-      ObjectActor::new(id, world_ref, None)
+      ObjectActor::new(id, world_ref, None, &host)
     });
 
     let o = Object {
@@ -169,6 +173,9 @@ impl World {
   }
 
   pub fn send_message(&self, id: Id, message: ObjectMessage) {
+    // TODO: if we hit this, we should actually have the objects queue up outgoing messages
+    // when the world is frozen, to be replayed when they are re-hydrated. (Also might want
+    // them to queue inbound messages in this case as well to freeze more quickly.)
     assert!(
       !self.frozen,
       "you cannot send messages while the world is frozen; see freeze_world below"
@@ -208,7 +215,10 @@ impl World {
     self.state.entrance_id = Some(entrance)
   }
 
-  pub fn new(arbiter: Arbiter) -> (Arc<RwLock<Option<World>>>, WorldRef) {
+  pub fn new(
+    arbiter: Arbiter,
+    lua_path: &std::path::Path,
+  ) -> (Arc<RwLock<Option<World>>>, WorldRef) {
     let arc = Arc::new(RwLock::new(None));
 
     let world_ref = WorldRef {
@@ -226,6 +236,7 @@ impl World {
       chat_connections: MultiMap::new(),
       actors: HashMap::new(),
       frozen: true,
+      lua_host: LuaHost::new(lua_path).unwrap(),
     };
 
     {
@@ -282,9 +293,10 @@ impl World {
     for obj in self.state.objects.iter() {
       let id = obj.id;
       let world_ref = self.own_ref.clone();
+      let host = self.lua_host.clone();
       let object_state = state.actor_state.get(&id).map(|state| state.clone());
       let addr = ObjectActor::start_in_arbiter(&self.arbiter, move |_ctx| {
-        ObjectActor::new(id, world_ref, object_state)
+        ObjectActor::new(id, world_ref, object_state, &host)
       });
       self.actors.insert(id, addr);
     }

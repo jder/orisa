@@ -1,4 +1,5 @@
 mod chat;
+mod lua;
 mod object_actor;
 mod util;
 mod world;
@@ -63,7 +64,7 @@ fn save_world(world_ref: WorldRef) -> ResultAnyError<()> {
 async fn run_server() -> Result<(), std::io::Error> {
     let arbiter = Arbiter::new();
 
-    let (_world, world_ref) = World::new(arbiter.clone());
+    let (_world, world_ref) = World::new(arbiter.clone(), Path::new("../../killpop/main.lua"));
 
     world_ref.write(|w| {
         if load_world(w).is_err() {

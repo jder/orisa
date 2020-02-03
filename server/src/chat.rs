@@ -1,3 +1,4 @@
+use crate::lua;
 use crate::object_actor::{ObjectMessage, ObjectMessagePayload};
 use crate::world::{Id, WorldRef};
 use actix::{Actor, AsyncContext, Handler, Message, StreamHandler};
@@ -78,7 +79,10 @@ impl ChatSocket {
             container,
             ObjectMessage {
               immediate_sender: self.id(),
-              payload: ObjectMessagePayload::Say { text: message.text },
+              payload: ObjectMessagePayload::Custom {
+                name: "say".to_string(),
+                payload: lua::SerializableValue::String(text.to_string()),
+              },
             },
           );
         } else {
