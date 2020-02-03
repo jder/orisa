@@ -22,8 +22,8 @@ impl fmt::Display for Id {
   }
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug)]
-pub struct ObjectKind(String);
+#[derive(Serialize, Deserialize, Clone, Debug, Hash, PartialEq, Eq)]
+pub struct ObjectKind(pub String);
 
 impl ObjectKind {
   pub fn new(name: &str) -> ObjectKind {
@@ -137,6 +137,10 @@ impl World {
 
   pub fn entrance(&self) -> Id {
     self.state.entrance_id.unwrap()
+  }
+
+  pub fn kind(&self, id: Id) -> ObjectKind {
+    self.get(id).kind.clone()
   }
 
   pub fn get_or_create_user(&mut self, username: &str) -> Id {

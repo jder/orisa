@@ -1,6 +1,7 @@
 use crate::world::Id;
 use rlua;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::fs::File;
 use std::io::Read;
 
@@ -45,6 +46,7 @@ pub enum SerializableValue {
   Number(f64),
   String(String),
   Table(Vec<(SerializableValue, SerializableValue)>),
+  Dict(HashMap<String, SerializableValue>), // for JSON compat
 }
 
 impl<'lua> rlua::FromLua<'lua> for SerializableValue {
@@ -110,6 +112,9 @@ impl<'lua> rlua::ToLua<'lua> for SerializableValue {
       SerializableValue::String(s) => Ok(s.to_lua(lua)?),
       SerializableValue::Table(pairs) => lua
         .create_table_from(pairs.into_iter())
+        .map(|t| rlua::Value::Table(t)),
+      SerializableValue::Dict(dict) => lua
+        .create_table_from(dict.into_iter())
         .map(|t| rlua::Value::Table(t)),
     }
   }

@@ -40,15 +40,47 @@ impl Actor for ObjectActor {
         let globals = lua_ctx.globals();
 
         let orisa = lua_ctx.create_table()?;
-        // orisa.set("id", self.id)?;
         let wf = self.world.clone();
         orisa.set("id", self.id)?;
         orisa.set(
-          "children",
+          "get_children",
           lua_ctx.create_function(move |lua_ctx, object_id: Id| {
-            log::info!("called children with {}", object_id);
             Ok(wf.read(|w| w.children(object_id).collect::<Vec<Id>>()))
           })?,
+        )?;
+
+        let wf = self.world.clone();
+        let id = self.id;
+        orisa.set(
+          "send",
+          lua_ctx.create_function(
+            move |lua_ctx, (object_id, name, payload): (Id, String, SerializableValue)| {
+              Ok(wf.read(|w| {
+                w.send_message(
+                  object_id,
+                  ObjectMessage {
+                    immediate_sender: id,
+                    name: name,
+                    payload: payload,
+                  },
+                )
+              }))
+            },
+          )?,
+        )?;
+
+        let wf = self.world.clone();
+        orisa.set(
+          "tell",
+          lua_ctx.create_function(move |lua_ctx, (message): (String)| {
+            Ok(wf.read(|w| w.send_client_message(id, ServerMessage::new(&message))))
+          })?,
+        )?;
+
+        let wf = self.world.clone();
+        orisa.set(
+          "name",
+          lua_ctx.create_function(move |lua_ctx, (id): (Id)| Ok(wf.read(|w| w.username(id))))?,
         )?;
 
         globals.set("orisa", orisa)?;
@@ -63,36 +95,21 @@ impl Handler<ObjectMessage> for ObjectActor {
 
   fn handle(&mut self, msg: ObjectMessage, _ctx: &mut Self::Context) {
     let sender = msg.immediate_sender;
-    match msg.payload {
-      ObjectMessagePayload::Say { text } => self.world.read(|w| {
-        let name = w.username(sender);
-        w.children(self.id).for_each(|child| {
-          w.send_message(
-            child,
-            ObjectMessage {
-              immediate_sender: self.id,
-              payload: ObjectMessagePayload::Tell {
-                text: format!("{}: {}", name, text.clone()),
-              },
-            },
-          )
-        })
-      }),
-      //TODO: only handle tells for object types expected to have chat connections (i.e. people)
-      ObjectMessagePayload::Tell { text } => self
-        .world
-        .read(|w| w.send_client_message(self.id, ServerMessage::new(&text))),
-      ObjectMessagePayload::Custom { name, payload } => {
-        let _ = self
-          .lua_state
-          .context(|lua_ctx| {
-            let main: rlua::Function = lua_ctx.globals().get("main")?;
-            main.call((name, payload))?;
-            Ok(())
-          })
-          .map_err(|err: rlua::Error| log::error!("Failed running payload: {:?}", err));
-      }
-    }
+    let kind = self.world.read(|w| w.kind(self.id));
+
+    let _ = self
+      .lua_state
+      .context(|lua_ctx| {
+        let globals = lua_ctx.globals();
+        let orisa: rlua::Table = globals.get("orisa")?;
+        orisa.set("kind", kind.0)?;
+        orisa.set("sender", sender)?;
+
+        let main: rlua::Function = globals.get("main")?;
+        main.call((msg.name, msg.payload))?;
+        Ok(())
+      })
+      .map_err(|err: rlua::Error| log::error!("Failed running payload: {:?}", err));
   }
 }
 
@@ -110,21 +127,8 @@ impl Handler<FreezeMessage> for ObjectActor {
 #[derive(Debug)]
 pub struct ObjectMessage {
   pub immediate_sender: Id,
-  pub payload: ObjectMessagePayload,
-}
-
-#[derive(Debug)]
-pub enum ObjectMessagePayload {
-  Say {
-    text: String,
-  },
-  Tell {
-    text: String,
-  },
-  Custom {
-    name: String,
-    payload: SerializableValue,
-  },
+  pub name: String,
+  pub payload: SerializableValue,
 }
 
 impl Message for ObjectMessage {
