@@ -1,0 +1,18 @@
+version: '3'
+services: 
+  frontend:
+    build: client
+    ports: 
+      - 8000:80
+    links:
+      - backend
+  backend:
+    build: server
+    ports:
+      - 8000:8000
+    volumes:
+      - server/state:/state
+      - ../killpop:/code
+    environment:
+      - ORISA_STATE_DIRECTORY=/state
+      - ORISA_CODE_DIRECTORY=/code

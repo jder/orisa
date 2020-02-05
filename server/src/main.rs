@@ -17,6 +17,7 @@ use actix_web_actors::ws;
 use futures::executor;
 use listenfd::ListenFd;
 use log::info;
+use std::env;
 use std::fs::{copy, rename, File};
 use std::path::Path;
 
@@ -51,12 +52,14 @@ fn load_world(world: &mut World) -> ResultAnyError<()> {
 }
 
 fn save_world(world_ref: WorldRef) -> ResultAnyError<()> {
-    let temp_path = Path::new("world-out.json");
+    let state_dir_env = env::var("ORISA_STATE_DIRECTORY").unwrap_or("state".to_string());
+    let state_dir = Path::new(&state_dir_env);
+    let temp_path = state_dir.join("world-out.json");
     let file = File::create(&temp_path)?;
     World::freeze(world_ref, file).unwrap();
 
-    let final_path = Path::new("world.json");
-    let _ = copy(final_path, Path::new("world.bak.json")); // ignore result
+    let final_path = state_dir.join("world.json");
+    let _ = copy(final_path.clone(), state_dir.join("world.bak.json")); // ignore result
     rename(temp_path, final_path)?;
     Ok(())
 }
@@ -64,7 +67,10 @@ fn save_world(world_ref: WorldRef) -> ResultAnyError<()> {
 async fn run_server() -> Result<(), std::io::Error> {
     let arbiter = Arbiter::new();
 
-    let (_world, world_ref) = World::new(arbiter.clone(), Path::new("../../killpop/main.lua"));
+    // default to assuming killpop is checked out next to orisa
+    let code_dir_env = env::var("ORISA_CODE_DIRECTORY").unwrap_or("../../killpop".to_string());
+    let (_world, world_ref) =
+        World::new(arbiter.clone(), &Path::new(&code_dir_env).join("main.lua"));
 
     world_ref.write(|w| {
         if load_world(w).is_err() {
