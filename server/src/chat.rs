@@ -48,7 +48,7 @@ impl ChatSocket {
     let message: ClientMessage = serde_json::from_str(&text)?;
 
     lazy_static! {
-      static ref LOGIN_REGEX: Regex = Regex::new(" */login +([[:alpha:]]+)").unwrap();
+      static ref LOGIN_REGEX: Regex = Regex::new("^ */login +([[:alpha:]]+)$").unwrap();
     }
     if let Some(caps) = LOGIN_REGEX.captures(&message.text) {
       let world_ref = self.app_data.world_ref.clone();
