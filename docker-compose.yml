@@ -9,10 +9,11 @@ services:
   backend:
     build: server
     ports:
-      - 8001:8000
+      - 8080
     volumes:
       - ./server/state:/state
-      - ../killpop:/code
+      - ../killpop:/code:ro
     environment:
       - ORISA_STATE_DIRECTORY=/state
       - ORISA_CODE_DIRECTORY=/code
+      - RUST_LOG=INFO

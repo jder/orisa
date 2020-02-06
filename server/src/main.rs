@@ -45,7 +45,9 @@ fn main() -> Result<(), std::io::Error> {
 }
 
 fn load_world(world: &mut World) -> ResultAnyError<()> {
-    let path = Path::new("world.json");
+    let state_dir_env = env::var("ORISA_STATE_DIRECTORY").unwrap_or("state".to_string());
+    let state_dir = Path::new(&state_dir_env);
+    let path = state_dir.join("world.json");
     let file = File::open(&path)?;
     world.unfreeze_read(file)?;
     Ok(())
@@ -97,7 +99,7 @@ async fn run_server() -> Result<(), std::io::Error> {
     server = if let Some(l) = listenfd.take_tcp_listener(0).unwrap() {
         server.listen(l)?
     } else {
-        server.bind("127.0.0.1:8080")?
+        server.bind("0.0.0.0:8080")?
     };
 
     info!("Starting!");
