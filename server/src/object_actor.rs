@@ -10,6 +10,7 @@ pub struct ObjectActor {
   id: Id,
   world: WorldRef,
   lua_state: rlua::Lua,
+  state: ObjectActorState,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -25,6 +26,7 @@ impl ObjectActor {
     ObjectActor {
       id: id,
       world: world_ref,
+      state: state.unwrap_or(ObjectActorState {}),
       lua_state: lua_host.fresh_state().unwrap(),
     }
   }
@@ -95,21 +97,25 @@ impl Handler<ObjectMessage> for ObjectActor {
 
   fn handle(&mut self, msg: ObjectMessage, _ctx: &mut Self::Context) {
     let sender = msg.immediate_sender;
-    let kind = self.world.read(|w| w.kind(self.id));
+    // we hold a read lock on the world as a simple form of "transaction isolation" for now
+    // this is not useful right now but prevents us from accidentally writing to the world
+    // which could produce globally-visible effects while other objects are running.
+    self.world.read(|w| {
+      let kind = w.kind(self.id);
+      let _ = self
+        .lua_state
+        .context(|lua_ctx| {
+          let globals = lua_ctx.globals();
+          let orisa: rlua::Table = globals.get("orisa")?;
+          orisa.set("kind", kind.0)?;
+          orisa.set("sender", sender)?;
 
-    let _ = self
-      .lua_state
-      .context(|lua_ctx| {
-        let globals = lua_ctx.globals();
-        let orisa: rlua::Table = globals.get("orisa")?;
-        orisa.set("kind", kind.0)?;
-        orisa.set("sender", sender)?;
-
-        let main: rlua::Function = globals.get("main")?;
-        main.call((msg.name, msg.payload))?;
-        Ok(())
-      })
-      .map_err(|err: rlua::Error| log::error!("Failed running payload: {:?}", err));
+          let main: rlua::Function = globals.get("main")?;
+          main.call((msg.name, msg.payload))?;
+          Ok(())
+        })
+        .map_err(|err: rlua::Error| log::error!("Failed running payload: {:?}", err));
+    });
   }
 }
 
@@ -119,7 +125,7 @@ impl Handler<FreezeMessage> for ObjectActor {
   fn handle(&mut self, _msg: FreezeMessage, _ctx: &mut Self::Context) -> Option<FreezeResponse> {
     Some(FreezeResponse {
       id: self.id,
-      state: ObjectActorState {},
+      state: self.state.clone(),
     })
   }
 }

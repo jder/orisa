@@ -22,7 +22,13 @@ Note that the config and dockerfiles are aimed at production use, not developmen
 
 # TODO
 
-* Send lua code from UI to be evalued in your user object
-* Reload lua code from github via command
+* sessions so websocket reconnect re-connects to user
+* chat history
+* passwords
+* ping/pong
+* make /login need to be at start of a line
 * private object state (orisa.set_state("foo", "whatever")) and public attrs orisa.get_attr(object, "foo") / orisa.set_attr("foo", "something")
+* presence
+* Send lua code from UI to be evalued in your user object
 * capability model
+* Reload lua code from github via command
