@@ -9,9 +9,9 @@ services:
   backend:
     build: server
     ports:
-      - 8000:8000
+      - 8001:8000
     volumes:
-      - server/state:/state
+      - ./server/state:/state
       - ../killpop:/code
     environment:
       - ORISA_STATE_DIRECTORY=/state
