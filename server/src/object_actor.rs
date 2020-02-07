@@ -1,4 +1,4 @@
-use crate::chat::ServerMessage;
+use crate::chat::ToClientMessage;
 use crate::lua::LuaHost;
 use crate::lua::SerializableValue;
 use crate::world::*;
@@ -75,7 +75,7 @@ impl Actor for ObjectActor {
         orisa.set(
           "tell",
           lua_ctx.create_function(move |lua_ctx, (message): (String)| {
-            Ok(wf.read(|w| w.send_client_message(id, ServerMessage::new(&message))))
+            Ok(wf.read(|w| w.send_client_message(id, ToClientMessage::Tell { text: message })))
           })?,
         )?;
 

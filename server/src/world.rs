@@ -1,4 +1,4 @@
-use crate::chat::{ChatSocket, ServerMessage};
+use crate::chat::{ChatSocket, ToClientMessage};
 use crate::lua::LuaHost;
 use crate::object_actor::*;
 use actix::{Actor, Addr, Arbiter, Message};
@@ -191,7 +191,7 @@ impl World {
       .do_send(message)
   }
 
-  pub fn send_client_message(&self, id: Id, message: ServerMessage) {
+  pub fn send_client_message(&self, id: Id, message: ToClientMessage) {
     if let Some(connections) = self.chat_connections.get_vec(&id) {
       for conn in connections.iter() {
         conn.do_send(message.clone());

@@ -26,7 +26,6 @@ Note that the config and dockerfiles are aimed at production use, not developmen
 * chat history
 * passwords
 * ping/pong
-* make /login need to be at start of a line
 * private object state (orisa.set_state("foo", "whatever")) and public attrs orisa.get_attr(object, "foo") / orisa.set_attr("foo", "something")
 * presence
 * Send lua code from UI to be evalued in your user object

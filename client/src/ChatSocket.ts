@@ -3,13 +3,15 @@ import { ServerMessage, ClientMessage } from './Messages';
 export class ChatSocket {
   private url: string;
   private ws: WebSocket;
+  private username: String;
 
   onmessage?: (message: ServerMessage) => void;
   buffer: ClientMessage[] = [];
 
-  constructor(url: string) {
+  constructor(url: string, username: String) {
     this.url = url;
     this.ws = this.connect();
+    this.username = username;
   }
 
   private connect() {
@@ -29,6 +31,7 @@ export class ChatSocket {
     }
     this.ws.onopen = (event: Event) => {
       console.log("websocket open");
+
       const toSend = this.buffer;
       this.buffer = [];
 

@@ -45,33 +45,41 @@ impl ChatSocket {
     text: &str,
     ctx: &mut ws::WebsocketContext<Self>,
   ) -> Result<(), serde_json::error::Error> {
-    let message: ClientMessage = serde_json::from_str(&text)?;
+    let message: ToServerMessage = serde_json::from_str(&text)?;
 
-    lazy_static! {
-      static ref LOGIN_REGEX: Regex = Regex::new("^ */login +([[:alpha:]]+)$").unwrap();
+    match message {
+      ToServerMessage::Login { username } => self.handle_login(&username, ctx),
+      ToServerMessage::Say { text } => self.handle_say(&text, ctx),
     }
-    if let Some(caps) = LOGIN_REGEX.captures(&message.text) {
-      let world_ref = self.app_data.world_ref.clone();
-      world_ref.write(|world| {
-        let id = world.get_or_create_user(caps.get(1).unwrap().as_str());
 
-        if let Some(existing_id) = self.self_id {
-          world.remove_chat_connection(existing_id, ctx.address());
-        }
+    Ok(())
+  }
 
-        world.register_chat_connect(id, ctx.address());
-        self.self_id = Some(id);
-        self
-          .send_to_client(&ServerMessage::new(&format!("You are object {}", id)), ctx)
-          .unwrap();
-      });
-    } else if self.self_id.is_none() {
+  fn handle_login(&mut self, username: &str, ctx: &mut ws::WebsocketContext<Self>) {
+    let world_ref = self.app_data.world_ref.clone();
+    world_ref.write(|world| {
+      let id = world.get_or_create_user(username);
+
+      if let Some(existing_id) = self.self_id {
+        world.remove_chat_connection(existing_id, ctx.address());
+      }
+
+      world.register_chat_connect(id, ctx.address());
+      self.self_id = Some(id);
       self
         .send_to_client(
-          &ServerMessage::new(&format!("Please `/login username` first")),
+          &ToClientMessage::Tell {
+            text: format!("You are object {}", id),
+          },
           ctx,
         )
         .unwrap();
+    });
+  }
+
+  fn handle_say(&self, text: &str, ctx: &mut ws::WebsocketContext<Self>) {
+    if self.self_id.is_none() {
+      log::warn!("Got tell when had no id")
     } else {
       self.app_data.world_ref.read(|world| {
         if let Some(container) = world.parent(self.id()) {
@@ -85,13 +93,16 @@ impl ChatSocket {
           );
         } else {
           self
-            .send_to_client(&ServerMessage::new("You aren't anywhere."), ctx)
+            .send_to_client(
+              &ToClientMessage::Tell {
+                text: "You aren't anywhere.".to_string(),
+              },
+              ctx,
+            )
             .unwrap();
         }
       });
     }
-
-    Ok(())
   }
 
   fn id(&self) -> Id {
@@ -100,7 +111,7 @@ impl ChatSocket {
 
   fn send_to_client(
     &self,
-    message: &ServerMessage,
+    message: &ToClientMessage,
     ctx: &mut ws::WebsocketContext<Self>,
   ) -> Result<(), serde_json::error::Error> {
     let s = serde_json::to_string(message)?;
@@ -109,10 +120,10 @@ impl ChatSocket {
   }
 }
 
-impl Handler<ServerMessage> for ChatSocket {
+impl Handler<ToClientMessage> for ChatSocket {
   type Result = ();
 
-  fn handle(&mut self, msg: ServerMessage, ctx: &mut ws::WebsocketContext<Self>) {
+  fn handle(&mut self, msg: ToClientMessage, ctx: &mut ws::WebsocketContext<Self>) {
     self.send_to_client(&msg, ctx).unwrap();
   }
 }
@@ -122,29 +133,21 @@ pub struct AppState {
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
-struct ClientMessage {
-  id: String,
-  text: String,
+#[serde(tag = "type")]
+pub enum ToClientMessage {
+  Tell { text: String },
+  Backlog { history: Vec<String> },
+}
+
+impl Message for ToClientMessage {
+  type Result = ();
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct ServerMessage {
-  id: String,
-  text: String,
-}
-
-impl ServerMessage {
-  pub fn new(text: &str) -> ServerMessage {
-    ServerMessage {
-      id: Uuid::new_v4().to_string(),
-      text: text.to_string(),
-    }
-  }
-}
-
-// TODO: Consider separating "messages we send to client" from "messages other objects send to chat socket"
-impl Message for ServerMessage {
-  type Result = ();
+#[serde(tag = "type")]
+enum ToServerMessage {
+  Login { username: String },
+  Say { text: String },
 }
 
 impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for ChatSocket {
