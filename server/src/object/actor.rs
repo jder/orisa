@@ -9,10 +9,10 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 pub struct ObjectActor {
-  pub(super) id: Id,
-  pub(super) world: WorldRef,
-  pub(super) lua_state: rlua::Lua,
-  pub(super) state: ObjectActorState,
+  id: Id,
+  world: WorldRef,
+  state: ObjectActorState,
+  object_executor: object::executor::ObjectExecutor,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -33,25 +33,28 @@ impl ObjectActor {
       state: state.unwrap_or(ObjectActorState {
         persistent_state: HashMap::new(),
       }),
-      lua_state: lua_host.fresh_state().unwrap(),
+      object_executor: object::executor::ObjectExecutor::new(lua_host).unwrap(),
     }
   }
 
   fn run_main(&mut self, msg: ObjectMessage) -> rlua::Result<()> {
+    let wf = self.world.clone();
+    let id = self.id;
+
     // we hold a read lock on the world as a simple form of "transaction isolation" for now
     // this is not useful right now but prevents us from accidentally writing to the world
     // which could produce globally-visible effects while other objects are running.
-    let wf = self.world.clone();
-    let id = self.id;
     wf.read(|_w| {
-      object::api::with_api(self, |lua_ctx| {
-        let globals = lua_ctx.globals();
-        let orisa: rlua::Table = globals.get("orisa")?;
-        orisa.set("self", id)?;
-        let main: rlua::Function = globals.get("main")?;
+      self
+        .object_executor
+        .execute(id, self.world.clone(), &mut self.state, |lua_ctx| {
+          let globals = lua_ctx.globals();
+          let orisa: rlua::Table = globals.get("orisa")?;
+          orisa.set("self", id)?;
+          let main: rlua::Function = globals.get("main")?;
 
-        main.call::<_, ()>((msg.immediate_sender, msg.name, msg.payload))
-      })
+          main.call::<_, ()>((msg.immediate_sender, msg.name, msg.payload))
+        })
     })
   }
 }
@@ -59,12 +62,7 @@ impl ObjectActor {
 impl Actor for ObjectActor {
   type Context = Context<Self>;
 
-  fn started(&mut self, _ctx: &mut Self::Context) {
-    self
-      .lua_state
-      .context(|ctx| object::api::register_api(ctx))
-      .unwrap();
-  }
+  fn started(&mut self, _ctx: &mut Self::Context) {}
 }
 
 impl Handler<ObjectMessage> for ObjectActor {
