@@ -23,6 +23,7 @@ Note that the config and dockerfiles are aimed at production use, not developmen
 # TODO
 
 * chat history
+* hot reload!
 * passwords
 * ping/pong
 * private object state (orisa.set_state("foo", "whatever")) and public attrs orisa.get_attr(object, "foo") / orisa.set_attr("foo", "something")

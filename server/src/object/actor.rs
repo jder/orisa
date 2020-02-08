@@ -17,7 +17,7 @@ pub struct ObjectActor {
 
 #[derive(Serialize, Deserialize, Clone)]
 pub struct ObjectActorState {
-  persistent_state: HashMap<String, SerializableValue>,
+  pub(super) persistent_state: HashMap<String, SerializableValue>,
 }
 
 impl ObjectActor {
