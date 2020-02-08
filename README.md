@@ -22,7 +22,6 @@ Note that the config and dockerfiles are aimed at production use, not developmen
 
 # TODO
 
-* sessions so websocket reconnect re-connects to user
 * chat history
 * passwords
 * ping/pong

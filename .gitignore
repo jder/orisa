@@ -1,4 +1,3 @@
 .*
 ~*
-world.json
-world.bak.json
+/server/state

@@ -1,6 +1,6 @@
 use crate::chat::{ChatSocket, ToClientMessage};
 use crate::lua::LuaHost;
-use crate::object_actor::*;
+use crate::object::actor::*;
 use actix::{Actor, Addr, Arbiter, Message};
 use futures::executor;
 use futures::stream::FuturesUnordered;

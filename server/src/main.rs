@@ -1,6 +1,6 @@
 mod chat;
 mod lua;
-mod object_actor;
+mod object;
 mod util;
 mod world;
 
@@ -17,6 +17,9 @@ use log::info;
 use std::env;
 use std::fs::{copy, rename, File};
 use std::path::Path;
+
+#[macro_use]
+extern crate scoped_tls;
 
 async fn index() -> impl Responder {
     HttpResponse::Ok().body("Hello world!")

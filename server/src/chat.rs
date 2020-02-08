@@ -1,5 +1,5 @@
 use crate::lua::SerializableValue;
-use crate::object_actor::ObjectMessage;
+use crate::object::actor::ObjectMessage;
 use crate::world::{Id, WorldRef};
 use actix::{Actor, AsyncContext, Handler, Message, StreamHandler};
 use actix_web::web;
