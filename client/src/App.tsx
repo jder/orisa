@@ -1,46 +1,39 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import './App.css';
 import ChatPane from './ChatPane';
-import { ServerMessage } from './Messages';
-import { ChatSocket } from './ChatSocket';
-import uuid from 'uuid/v4';
+import { withCookies, useCookies } from 'react-cookie';
 
 const App = () => {
-  const [text, setText] = useState("");
-  const [messages, setMessages] = useState([] as ServerMessage[]);
-  const [socket, setSocket] = useState(null as ChatSocket | null);
-
-  useEffect(() => {
-    const loc = document.location;
-    const protocol = loc.protocol === 'https' ? 'wss' : 'ws';
-    let s = new ChatSocket(`${protocol}://${loc.host}/api/socket`);
-    s.onmessage = (message: ServerMessage) => {
-      setMessages(prev => prev.concat([message]));
-    };
-    setSocket(s);
-  }, [])
-
+  const [cookies, setCookie] = useCookies(['username']);
+  const [newUsername, setNewUsername] = useState("");
+  
   const handleSubmit = (event: React.FormEvent) => {
     event.preventDefault();
-
-    socket!.send({text: text, id: uuid()});
-    setText("");
+    setCookie('username', newUsername, { path: '/' });
   }
 
   const handleChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-    setText(event.target.value);
+    setNewUsername(event.target.value);
     event.preventDefault();
+  }
+
+  function body(username: string | undefined) {
+    if (username) {
+      return <ChatPane username={username} />
+    } else {
+      return <form onSubmit={handleSubmit}>
+        <label htmlFor="username">Username: </label>
+        <input name="username" autoFocus type="text" value={newUsername} onChange={handleChange} placeholder="frank" />
+        <input type="submit" value="Login" />
+      </form>
+    }
   }
 
   return (
     <div className="App">
-      <ChatPane messages={messages} />   
-      <form onSubmit={handleSubmit}>
-        <input className="mainInput" autoFocus type="text" value={text} onChange={handleChange} />
-        <input type="submit" disabled={!socket} value="Send" />
-      </form>
+      {body(cookies.username)}
     </div>
   );
 }
 
-export default App;
+export default withCookies(App);

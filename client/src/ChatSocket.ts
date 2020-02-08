@@ -1,14 +1,14 @@
-import { ServerMessage, ClientMessage } from './Messages';
+import { ToServerMessage, ToClientMessage, LoginMessage } from './Messages';
 
 export class ChatSocket {
   private url: string;
   private ws: WebSocket;
-  private username: String;
+  private username: string;
 
-  onmessage?: (message: ServerMessage) => void;
-  buffer: ClientMessage[] = [];
+  onmessage?: (message: ToClientMessage) => void;
+  buffer: ToServerMessage[] = [];
 
-  constructor(url: string, username: String) {
+  constructor(url: string, username: string) {
     this.url = url;
     this.ws = this.connect();
     this.username = username;
@@ -20,7 +20,7 @@ export class ChatSocket {
       if (this.onmessage) {
         const parsed = JSON.parse(event.data);
         console.log("got message", parsed);
-        this.onmessage(parsed as ServerMessage);
+        this.onmessage(parsed as ToClientMessage);
       }
     }
     this.ws.onerror = (event: Event) => {
@@ -32,6 +32,8 @@ export class ChatSocket {
     this.ws.onopen = (event: Event) => {
       console.log("websocket open");
 
+      this.send(new LoginMessage(this.username));
+
       const toSend = this.buffer;
       this.buffer = [];
 
@@ -42,7 +44,7 @@ export class ChatSocket {
     return this.ws;
   }
 
-  send(message: ClientMessage) {
+  send(message: ToServerMessage) {
     if (this.ws.readyState !== WebSocket.OPEN) {
       console.warn("Tried to send message when websocket is closed; buffering");
       this.buffer.push(message);

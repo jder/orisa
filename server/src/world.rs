@@ -11,7 +11,7 @@ use serde_json;
 use std::collections::HashMap;
 use std::fmt;
 use std::io::{Read, Write};
-use std::sync::{Arc, RwLock, RwLockReadGuard, Weak};
+use std::sync::{Arc, RwLock, Weak};
 
 #[derive(Debug, PartialEq, Clone, Copy, Hash, Eq, Deserialize, Serialize)]
 pub struct Id(usize);

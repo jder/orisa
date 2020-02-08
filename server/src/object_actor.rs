@@ -1,4 +1,4 @@
-use crate::chat::ToClientMessage;
+use crate::chat::{ChatRowContent, ToClientMessage};
 use crate::lua::LuaHost;
 use crate::lua::SerializableValue;
 use crate::world::*;
@@ -35,7 +35,7 @@ impl ObjectActor {
 impl Actor for ObjectActor {
   type Context = Context<Self>;
 
-  fn started(&mut self, ctx: &mut Self::Context) {
+  fn started(&mut self, _ctx: &mut Self::Context) {
     self
       .lua_state
       .context::<_, rlua::Result<()>>(|lua_ctx| {
@@ -46,7 +46,7 @@ impl Actor for ObjectActor {
         orisa.set("id", self.id)?;
         orisa.set(
           "get_children",
-          lua_ctx.create_function(move |lua_ctx, object_id: Id| {
+          lua_ctx.create_function(move |_lua_ctx, object_id: Id| {
             Ok(wf.read(|w| w.children(object_id).collect::<Vec<Id>>()))
           })?,
         )?;
@@ -56,7 +56,7 @@ impl Actor for ObjectActor {
         orisa.set(
           "send",
           lua_ctx.create_function(
-            move |lua_ctx, (object_id, name, payload): (Id, String, SerializableValue)| {
+            move |_lua_ctx, (object_id, name, payload): (Id, String, SerializableValue)| {
               Ok(wf.read(|w| {
                 w.send_message(
                   object_id,
@@ -74,15 +74,22 @@ impl Actor for ObjectActor {
         let wf = self.world.clone();
         orisa.set(
           "tell",
-          lua_ctx.create_function(move |lua_ctx, (message): (String)| {
-            Ok(wf.read(|w| w.send_client_message(id, ToClientMessage::Tell { text: message })))
+          lua_ctx.create_function(move |_lua_ctx, message: String| {
+            Ok(wf.read(|w| {
+              w.send_client_message(
+                id,
+                ToClientMessage::Tell {
+                  content: ChatRowContent::new(&message),
+                },
+              )
+            }))
           })?,
         )?;
 
         let wf = self.world.clone();
         orisa.set(
           "name",
-          lua_ctx.create_function(move |lua_ctx, (id): (Id)| Ok(wf.read(|w| w.username(id))))?,
+          lua_ctx.create_function(move |_lua_ctx, id: Id| Ok(wf.read(|w| w.username(id))))?,
         )?;
 
         globals.set("orisa", orisa)?;

@@ -4,9 +4,6 @@ mod object_actor;
 mod util;
 mod world;
 
-#[macro_use]
-extern crate lazy_static;
-
 use crate::chat::{AppState, ChatSocket};
 use crate::util::ResultAnyError;
 use crate::world::{World, WorldRef};

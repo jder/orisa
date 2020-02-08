@@ -5,7 +5,7 @@
   margin: 100px auto;
 }
 
-.ChatPane {
+.ChatHistory {
   background-color: lightblue;
   padding: 10px;
   overflow-y: scroll;

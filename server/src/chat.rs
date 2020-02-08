@@ -1,10 +1,9 @@
-use crate::lua;
+use crate::lua::SerializableValue;
 use crate::object_actor::ObjectMessage;
 use crate::world::{Id, WorldRef};
 use actix::{Actor, AsyncContext, Handler, Message, StreamHandler};
 use actix_web::web;
 use actix_web_actors::ws;
-use regex::Regex;
 use serde::{Deserialize, Serialize};
 use serde_json;
 use uuid::Uuid;
@@ -69,7 +68,7 @@ impl ChatSocket {
       self
         .send_to_client(
           &ToClientMessage::Tell {
-            text: format!("You are object {}", id),
+            content: ChatRowContent::new(&format!("You are object {}", id)),
           },
           ctx,
         )
@@ -87,15 +86,15 @@ impl ChatSocket {
             container,
             ObjectMessage {
               immediate_sender: self.id(),
-              name: "command".to_string(),
-              payload: serde_json::from_str(text).unwrap(),
+              name: "say".to_string(),
+              payload: SerializableValue::String(text.to_string()),
             },
           );
         } else {
           self
             .send_to_client(
               &ToClientMessage::Tell {
-                text: "You aren't anywhere.".to_string(),
+                content: ChatRowContent::new("You aren't anywhere."),
               },
               ctx,
             )
@@ -133,10 +132,25 @@ pub struct AppState {
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct ChatRowContent {
+  id: String,
+  text: String, // in the future, HTML etc
+}
+
+impl ChatRowContent {
+  pub fn new(text: &str) -> ChatRowContent {
+    return ChatRowContent {
+      id: Uuid::new_v4().to_string(),
+      text: text.to_string(),
+    };
+  }
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(tag = "type")]
 pub enum ToClientMessage {
-  Tell { text: String },
-  Backlog { history: Vec<String> },
+  Tell { content: ChatRowContent },
+  Backlog { history: Vec<ChatRowContent> },
 }
 
 impl Message for ToClientMessage {

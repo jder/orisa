@@ -1,53 +1,49 @@
 // From server
 export class ToServerMessage {
-  type: String;
+  type: string;
   
-  constructor(type: String) {
+  constructor(type: string) {
     this.type = type;
   }
 }
 
 export class LoginMessage extends ToServerMessage {
-  username: String;
+  username: string;
 
-  constructor(username: String) {
+  constructor(username: string) {
     super("Login")
     this.username = username;
   }
 }
 
 export class SayMessage extends ToServerMessage {
-  text: String;
+  text: string;
 
-  constructor(text: String) {
+  constructor(text: string) {
     super("Say")
     this.text = text;
   }
 }
 
-export class ToClientMessage {
-  type: String;
-  
-  constructor(type: String) {
-    this.type = type;
-  }
+export type ToClientMessage = { type: string; };
+export type TellMessage = {type: string, content: ChatRowContent};
+export type BacklogMessage = {type: string, history: [ChatRowContent] };
+
+export function isTellMessage(m: ToClientMessage): m is TellMessage {
+  return m.type == "Tell";
 }
 
-export class TellMessage extends ToClientMessage {
-  text: String;
+export function isBacklogMessage(m: ToClientMessage): m is BacklogMessage {
+  return m.type == "Backlog";
+}
 
-  constructor(text: String) {
-    super("Tell");
+// A row to display. Someday could include HTML, actions, styling, etc.
+export class ChatRowContent {
+  id: string;
+  text: string;
+
+  constructor(id: string, text: string) {
+    this.id = id;
     this.text = text;
   }
-}
-
-export class BacklogMessage extends ToClientMessage {
-  history: [String];
-
-  constructor(history: [String]) {
-    super("Backlog");
-    this.history = history;
-  }
-
 }
