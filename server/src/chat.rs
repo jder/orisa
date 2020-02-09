@@ -22,10 +22,18 @@ impl Actor for ChatSocket {
 
   fn stopped(&mut self, ctx: &mut Self::Context) {
     if let Some(id) = self.self_id {
-      self
-        .app_data
-        .world_ref
-        .write(|world| world.remove_chat_connection(id, ctx.address()));
+      self.app_data.world_ref.write(|world| {
+        world.remove_chat_connection(id, ctx.address());
+        world.send_message(
+          self.id(),
+          ObjectMessage {
+            original_user: Some(self.id()),
+            immediate_sender: self.id(),
+            name: "disconnected".to_string(),
+            payload: SerializableValue::Nil,
+          },
+        )
+      });
       log::info!("ChatSocket stopped for id {}", id);
     }
   }
@@ -66,14 +74,15 @@ impl ChatSocket {
 
       world.register_chat_connect(id, ctx.address());
       self.self_id = Some(id);
-      self
-        .send_to_client(
-          &ToClientMessage::Tell {
-            content: ChatRowContent::new(&format!("You are object {}", id)),
-          },
-          ctx,
-        )
-        .unwrap();
+      world.send_message(
+        self.id(),
+        ObjectMessage {
+          original_user: Some(self.id()),
+          immediate_sender: self.id(),
+          name: "connected".to_string(),
+          payload: SerializableValue::Nil,
+        },
+      )
     });
   }
 

@@ -42,6 +42,17 @@ pub fn tell(_lua_ctx: rlua::Context, message: String) -> rlua::Result<()> {
   }))
 }
 
+pub fn backlog(_lua_ctx: rlua::Context, messages: Vec<String>) -> rlua::Result<()> {
+  Ok(S::with_world(|w| {
+    w.send_client_message(
+      S::get_id(),
+      ToClientMessage::Backlog {
+        history: messages.iter().map(|s| ChatRowContent::new(s)).collect(),
+      },
+    )
+  }))
+}
+
 pub fn get_name(_lua_ctx: rlua::Context, id: Id) -> rlua::Result<String> {
   Ok(S::with_world(|w| w.username(id)))
 }
@@ -90,6 +101,7 @@ pub(super) fn register_api(lua_ctx: rlua::Context) -> rlua::Result<()> {
   orisa.set("get_parent", lua_ctx.create_function(get_parent)?)?;
   orisa.set("send", lua_ctx.create_function(send)?)?;
   orisa.set("tell", lua_ctx.create_function(tell)?)?;
+  orisa.set("backlog", lua_ctx.create_function(backlog)?)?;
   orisa.set("get_name", lua_ctx.create_function(get_name)?)?;
   orisa.set("get_kind", lua_ctx.create_function(get_kind)?)?;
   orisa.set("set_state", lua_ctx.create_function(set_state)?)?;

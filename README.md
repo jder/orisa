@@ -22,10 +22,11 @@ Note that the config and dockerfiles are aimed at production use, not developmen
 
 # TODO
 
-* chat history
 * public attrs orisa.get_attr(object, "foo") / orisa.set_attr("foo", "something")
 * presence
 * capability model
 * Reload lua code from github via command
+* Make print! go to console logs, too
 * ping/pong
+* nicer eval allowing multiline, blocks, etc, like lua playground
 * passwords
