@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import './App.css';
-import ChatPane from './ChatPane';
+import InteractionPane from './InteractionPane';
 import { withCookies, useCookies } from 'react-cookie';
 
 const App = () => {
@@ -19,11 +19,11 @@ const App = () => {
 
   function body(username: string | undefined) {
     if (username) {
-      return <ChatPane username={username} />
+      return <InteractionPane username={username} />
     } else {
       return <form onSubmit={handleSubmit}>
         <label htmlFor="username">Username: </label>
-        <input name="username" autoFocus type="text" value={newUsername} onChange={handleChange} placeholder="frank" />
+        <input name="username" autoFocus type="text" value={newUsername} onChange={handleChange} placeholder="mrmudkips" />
         <input type="submit" value="Login" />
       </form>
     }

@@ -6,6 +6,7 @@ use actix_web::web;
 use actix_web_actors::ws;
 use serde::{Deserialize, Serialize};
 use serde_json;
+use std::collections::HashMap;
 use uuid::Uuid;
 
 pub struct ChatSocket {
@@ -53,11 +54,21 @@ impl ChatSocket {
     ctx: &mut ws::WebsocketContext<Self>,
   ) -> Result<(), serde_json::error::Error> {
     let message: ToServerMessage = serde_json::from_str(&text)?;
-
+    log::info!("Got message {:?}", message);
     match message {
       ToServerMessage::Login { username } => self.handle_login(&username, ctx),
-      ToServerMessage::Say { text } => self.handle_say(&text, ctx),
+      ToServerMessage::Say { text } => {
+        self.handle_user_command("say", SerializableValue::String(text.to_string()))
+      }
       ToServerMessage::ReloadCode {} => self.handle_reload(ctx),
+      ToServerMessage::SaveFile { name, content } => {
+        // TODO: this needs way nicer syntax
+        let mut payload = HashMap::new();
+        payload.insert("name".to_string(), SerializableValue::String(name));
+        payload.insert("content".to_string(), SerializableValue::String(content));
+
+        self.handle_user_command("save_file", SerializableValue::Dict(payload))
+      }
     }
 
     Ok(())
@@ -74,21 +85,13 @@ impl ChatSocket {
 
       world.register_chat_connect(id, ctx.address());
       self.self_id = Some(id);
-      world.send_message(
-        self.id(),
-        ObjectMessage {
-          original_user: Some(self.id()),
-          immediate_sender: self.id(),
-          name: "connected".to_string(),
-          payload: SerializableValue::Nil,
-        },
-      )
     });
+    self.handle_user_command("connected", SerializableValue::Nil);
   }
 
-  fn handle_say(&self, text: &str, _ctx: &mut ws::WebsocketContext<Self>) {
+  fn handle_user_command(&self, name: &str, payload: SerializableValue) {
     if self.self_id.is_none() {
-      log::warn!("Got tell when had no id")
+      log::warn!("Got command when had no id")
     } else {
       self.app_data.world_ref.read(|world| {
         world.send_message(
@@ -96,8 +99,8 @@ impl ChatSocket {
           ObjectMessage {
             original_user: Some(self.id()),
             immediate_sender: self.id(),
-            name: "say".to_string(),
-            payload: SerializableValue::String(text.to_string()),
+            name: name.to_string(),
+            payload: payload,
           },
         )
       })
@@ -105,11 +108,7 @@ impl ChatSocket {
   }
 
   fn handle_reload(&self, ctx: &mut ws::WebsocketContext<Self>) {
-    self
-      .app_data
-      .world_ref
-      .write(|world| world.reload_code())
-      .unwrap();
+    self.app_data.world_ref.write(|world| world.reload_code());
     self
       .send_to_client(
         &ToClientMessage::Tell {
@@ -168,6 +167,7 @@ pub enum ToClientMessage {
   Tell { content: ChatRowContent },
   Backlog { history: Vec<ChatRowContent> },
   Log { message: String },
+  EditFile { name: String, content: String },
 }
 
 impl Message for ToClientMessage {
@@ -180,6 +180,7 @@ enum ToServerMessage {
   Login { username: String },
   Say { text: String },
   ReloadCode {},
+  SaveFile { name: String, content: String },
 }
 
 impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for ChatSocket {

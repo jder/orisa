@@ -2,7 +2,7 @@ use crate::lua::LuaHost;
 use crate::object::actor::ObjectActorState;
 use crate::object::actor::ObjectMessage;
 use crate::object::api;
-use crate::world::{Id, World, WorldRef};
+use crate::world::{Id, ObjectKind, World, WorldRef};
 use rlua;
 use std::cell::RefCell;
 
@@ -36,7 +36,7 @@ impl ObjectExecutor {
     world: WorldRef,
     object_state: &'a mut ObjectActorState,
     body: F,
-  ) -> rlua::Result<T>
+  ) -> rlua::Result<(T, Vec<GlobalWrite>)>
   where
     F: FnOnce(rlua::Context) -> rlua::Result<T>,
   {
@@ -45,14 +45,38 @@ impl ObjectExecutor {
       current_message: current_message,
       world: world.clone(),
       object_state: RefCell::new(object_state),
+      writes: RefCell::new(Vec::new()),
     };
 
     // This is a gross hack but is safe since the scoped thread local ensures
     // this value only exists as long as this block.
-    EXECUTION_STATE.set(unsafe { make_static(&state) }, || match &self.lua_state {
+    let result = EXECUTION_STATE.set(unsafe { make_static(&state) }, || match &self.lua_state {
       Ok(lua_state) => lua_state.context(|lua_ctx| body(lua_ctx)),
       Err(e) => Err(e.clone()),
+    });
+
+    result.map(|t| {
+      let writes = state.writes.borrow().clone();
+      (t, writes)
     })
+  }
+}
+
+// For things we collect during execution but only commit afterwards
+// until we have a real transaction isolation story.
+#[derive(Clone)]
+pub enum GlobalWrite {
+  SetCustomSpaceContent { kind: ObjectKind, content: String },
+}
+
+impl GlobalWrite {
+  // TODO: would be nice to consume here but it's tricky due to the schenanigans above
+  pub fn commit(&self, world: &mut World) {
+    match self {
+      GlobalWrite::SetCustomSpaceContent { kind, content } => {
+        world.set_custom_space_content(kind.clone(), content.clone())
+      }
+    }
   }
 }
 
@@ -61,6 +85,7 @@ pub(super) struct ExecutionState<'a> {
   current_message: &'a ObjectMessage,
   world: WorldRef,
   object_state: RefCell<&'a mut ObjectActorState>,
+  writes: RefCell<Vec<GlobalWrite>>,
 }
 
 impl<'a> ExecutionState<'a> {
@@ -76,6 +101,10 @@ impl<'a> ExecutionState<'a> {
     F: FnOnce(&mut ObjectActorState) -> T,
   {
     Self::with_state(|s| body(&mut s.object_state.borrow_mut()))
+  }
+
+  pub(super) fn add_write(write: GlobalWrite) {
+    Self::with_state(|s| s.writes.borrow_mut().push(write))
   }
 
   pub(super) fn with_world<T, F>(body: F) -> T
@@ -109,17 +138,17 @@ pub struct ExecutorCache {
 }
 
 impl ExecutorCache {
-  pub fn new(lua_host: &LuaHost) -> ExecutorCache {
+  pub fn new(lua_host: LuaHost) -> ExecutorCache {
     ExecutorCache {
-      lua_host: lua_host.clone(),
+      lua_host: lua_host,
       current_generation: 0,
       executors: Vec::new(),
     }
   }
 
-  pub fn update(&mut self, lua_host: &LuaHost) {
+  pub fn update(&mut self, lua_host: LuaHost) {
     self.current_generation += 1;
-    self.lua_host = lua_host.clone();
+    self.lua_host = lua_host;
     self.executors.clear();
   }
 

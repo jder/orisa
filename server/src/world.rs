@@ -7,6 +7,7 @@ use futures::executor;
 use futures::stream::FuturesUnordered;
 use futures::stream::StreamExt;
 use multimap::MultiMap;
+use rlua;
 use serde::{Deserialize, Serialize};
 use serde_json;
 use std::collections::HashMap;
@@ -23,6 +24,30 @@ impl fmt::Display for Id {
   }
 }
 
+impl<'lua> rlua::ToLua<'lua> for Id {
+  fn to_lua(self, lua_ctx: rlua::Context<'lua>) -> rlua::Result<rlua::Value> {
+    format!("{}", self).to_lua(lua_ctx)
+  }
+}
+
+impl<'lua> rlua::FromLua<'lua> for Id {
+  fn from_lua(value: rlua::Value<'lua>, _lua_ctx: rlua::Context<'lua>) -> rlua::Result<Id> {
+    if let rlua::Value::String(s) = value {
+      let string = s.to_str()?;
+      if string.starts_with("#") {
+        let index = &string[1..]
+          .parse::<usize>()
+          .map_err(|e| rlua::Error::external(e))?;
+        Ok(Id(*index))
+      } else {
+        Err(rlua::Error::external("Invalid object id"))
+      }
+    } else {
+      Err(rlua::Error::external("Expected a string for an object id"))
+    }
+  }
+}
+
 #[derive(Serialize, Deserialize, Clone, Debug, Hash, PartialEq, Eq)]
 pub struct ObjectKind(pub String);
 
@@ -36,6 +61,26 @@ impl ObjectKind {
   }
   fn room() -> ObjectKind {
     ObjectKind::new("system/room")
+  }
+}
+
+impl<'lua> rlua::ToLua<'lua> for ObjectKind {
+  fn to_lua(self, lua_ctx: rlua::Context<'lua>) -> rlua::Result<rlua::Value> {
+    self.0.to_lua(lua_ctx)
+  }
+}
+
+impl<'lua> rlua::FromLua<'lua> for ObjectKind {
+  fn from_lua(value: rlua::Value<'lua>, _lua_ctx: rlua::Context<'lua>) -> rlua::Result<ObjectKind> {
+    // TODO: more validation
+    if let rlua::Value::String(s) = value {
+      let string = s.to_str()?;
+      Ok(ObjectKind(string.to_string()))
+    } else {
+      Err(rlua::Error::external(
+        "Expected a string for an object kind",
+      ))
+    }
   }
 }
 
@@ -67,6 +112,7 @@ pub struct WorldState {
   objects: Vec<Object>,
   entrance_id: Option<Id>, // only None during initialization
   users: HashMap<String, Id>,
+  custom_spaces: HashMap<ObjectKind, String>, // string is lua code
 }
 
 #[derive(Serialize, Deserialize)]
@@ -192,14 +238,21 @@ impl World {
       .do_send(message)
   }
 
-  pub fn reload_code(&mut self) -> std::io::Result<()> {
+  pub fn reload_code(&mut self) {
+    log::info!("reloading code");
     // TODO: only reload for a particular kind/space/user, etc
-    self.lua_host.reload()?;
     let mut caches = self.executor_caches.lock().unwrap();
-    for (_, cache) in caches.iter_mut() {
-      cache.update(&self.lua_host)
+    for (kind, cache) in caches.iter_mut() {
+      cache.update(self.host_for_kind(kind))
     }
-    Ok(())
+    log::info!("finished reload");
+  }
+
+  fn host_for_kind(&self, kind: &ObjectKind) -> LuaHost {
+    match self.state.custom_spaces.get(&kind) {
+      None => self.lua_host.clone(),
+      Some(content) => self.lua_host.with_source(content),
+    }
   }
 
   pub fn send_client_message(&self, id: Id, message: ToClientMessage) {
@@ -240,6 +293,7 @@ impl World {
         objects: vec![],
         entrance_id: None,
         users: HashMap::new(),
+        custom_spaces: HashMap::new(),
       },
       arbiter: arbiter,
       own_ref: world_ref.clone(),
@@ -266,7 +320,7 @@ impl World {
       let mut caches = self.executor_caches.lock().unwrap();
       let cache = caches
         .entry(kind.clone())
-        .or_insert(ExecutorCache::new(&self.lua_host));
+        .or_insert(ExecutorCache::new(self.host_for_kind(&kind)));
       cache.checkout_executor()
     };
 
@@ -276,6 +330,15 @@ impl World {
     caches.get_mut(&kind).map(|c| c.checkin_executor(executor));
 
     result
+  }
+
+  pub fn get_custom_space_content(&self, kind: ObjectKind) -> Option<&String> {
+    self.state.custom_spaces.get(&kind)
+  }
+
+  pub fn set_custom_space_content(&mut self, kind: ObjectKind, content: String) {
+    self.state.custom_spaces.insert(kind, content);
+    self.reload_code(); // TODO: restrict to just this kind
   }
 
   pub fn freeze(world_ref: WorldRef, w: impl Write) -> Result<(), serde_json::Error> {

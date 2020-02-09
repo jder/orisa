@@ -1,20 +1,20 @@
 use crate::chat::{ChatRowContent, ToClientMessage};
 use crate::lua::*;
 use crate::object::actor::ObjectMessage;
-use crate::object::executor::ExecutionState as S;
-use crate::world::Id;
+use crate::object::executor::{ExecutionState as S, GlobalWrite};
+use crate::world::{Id, ObjectKind};
 
-pub fn get_children(_lua_ctx: rlua::Context, object_id: Id) -> rlua::Result<Vec<Id>> {
+fn get_children(_lua_ctx: rlua::Context, object_id: Id) -> rlua::Result<Vec<Id>> {
   Ok(S::with_world(|w| {
     w.children(object_id).collect::<Vec<Id>>()
   }))
 }
 
-pub fn get_parent(_lua_ctx: rlua::Context, object_id: Id) -> rlua::Result<Option<Id>> {
+fn get_parent(_lua_ctx: rlua::Context, object_id: Id) -> rlua::Result<Option<Id>> {
   Ok(S::with_world(|w| w.parent(object_id)))
 }
 
-pub fn send(
+fn send(
   _lua_ctx: rlua::Context,
   (object_id, name, payload): (Id, String, SerializableValue),
 ) -> rlua::Result<()> {
@@ -31,7 +31,7 @@ pub fn send(
   }))
 }
 
-pub fn tell(_lua_ctx: rlua::Context, message: String) -> rlua::Result<()> {
+fn send_user_tell(_lua_ctx: rlua::Context, message: String) -> rlua::Result<()> {
   Ok(S::with_world(|w| {
     w.send_client_message(
       S::get_id(),
@@ -42,7 +42,7 @@ pub fn tell(_lua_ctx: rlua::Context, message: String) -> rlua::Result<()> {
   }))
 }
 
-pub fn backlog(_lua_ctx: rlua::Context, messages: Vec<String>) -> rlua::Result<()> {
+fn send_user_backlog(_lua_ctx: rlua::Context, messages: Vec<String>) -> rlua::Result<()> {
   Ok(S::with_world(|w| {
     w.send_client_message(
       S::get_id(),
@@ -53,15 +53,27 @@ pub fn backlog(_lua_ctx: rlua::Context, messages: Vec<String>) -> rlua::Result<(
   }))
 }
 
-pub fn get_name(_lua_ctx: rlua::Context, id: Id) -> rlua::Result<String> {
+fn edit_file(_lua_ctx: rlua::Context, (name, content): (String, String)) -> rlua::Result<()> {
+  Ok(S::with_world(|w| {
+    w.send_client_message(
+      S::get_id(),
+      ToClientMessage::EditFile {
+        name: name,
+        content: content,
+      },
+    )
+  }))
+}
+
+fn get_name(_lua_ctx: rlua::Context, id: Id) -> rlua::Result<String> {
   Ok(S::with_world(|w| w.username(id)))
 }
 
-pub fn get_kind(_lua_ctx: rlua::Context, id: Id) -> rlua::Result<String> {
+fn get_kind(_lua_ctx: rlua::Context, id: Id) -> rlua::Result<String> {
   Ok(S::with_world(|w| w.kind(id).0))
 }
 
-pub fn set_state(
+fn set_state(
   _lua_ctx: rlua::Context,
   (id, key, value): (Id, String, SerializableValue),
 ) -> rlua::Result<SerializableValue> {
@@ -76,10 +88,7 @@ pub fn set_state(
   }
 }
 
-pub fn get_state(
-  _lua_ctx: rlua::Context,
-  (id, key): (Id, String),
-) -> rlua::Result<SerializableValue> {
+fn get_state(_lua_ctx: rlua::Context, (id, key): (Id, String)) -> rlua::Result<SerializableValue> {
   if id != S::get_id() {
     // Someday we might relax this given capabilities and probably containment (for concurrency)
     Err(rlua::Error::external("Can only get your own state."))
@@ -93,19 +102,51 @@ pub fn get_state(
   }
 }
 
+fn get_custom_space_content(_lua_ctx: rlua::Context, name: String) -> rlua::Result<Option<String>> {
+  Ok(S::with_world(|w| {
+    w.get_custom_space_content(ObjectKind::new(&name))
+      .map(|s| s.clone())
+  }))
+}
+
+fn send_save_custom_space_content(
+  _lua_ctx: rlua::Context,
+  (name, content): (String, String),
+) -> rlua::Result<()> {
+  S::add_write(GlobalWrite::SetCustomSpaceContent {
+    kind: ObjectKind(name),
+    content: content,
+  });
+  Ok(())
+}
+
 pub(super) fn register_api(lua_ctx: rlua::Context) -> rlua::Result<()> {
   let globals = lua_ctx.globals();
   let orisa = lua_ctx.create_table()?;
 
+  orisa.set("send", lua_ctx.create_function(send)?)?;
+  orisa.set("send_user_tell", lua_ctx.create_function(send_user_tell)?)?;
+  orisa.set(
+    "send_user_backlog",
+    lua_ctx.create_function(send_user_backlog)?,
+  )?;
+
   orisa.set("get_children", lua_ctx.create_function(get_children)?)?;
   orisa.set("get_parent", lua_ctx.create_function(get_parent)?)?;
-  orisa.set("send", lua_ctx.create_function(send)?)?;
-  orisa.set("tell", lua_ctx.create_function(tell)?)?;
-  orisa.set("backlog", lua_ctx.create_function(backlog)?)?;
   orisa.set("get_name", lua_ctx.create_function(get_name)?)?;
   orisa.set("get_kind", lua_ctx.create_function(get_kind)?)?;
   orisa.set("set_state", lua_ctx.create_function(set_state)?)?;
   orisa.set("get_state", lua_ctx.create_function(get_state)?)?;
+
+  orisa.set("edit_file", lua_ctx.create_function(edit_file)?)?;
+  orisa.set(
+    "get_custom_space_content",
+    lua_ctx.create_function(get_custom_space_content)?,
+  )?;
+  orisa.set(
+    "send_save_custom_space_content",
+    lua_ctx.create_function(send_save_custom_space_content)?,
+  )?;
 
   globals.set("orisa", orisa)?;
   Ok(())

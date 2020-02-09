@@ -35,19 +35,34 @@ impl ObjectActor {
     // we hold a read lock on the world as a simple form of "transaction isolation" for now
     // this is not useful right now but prevents us from accidentally writing to the world
     // which could produce globally-visible effects while other objects are running.
-    wf.read(|_w| {
+    let res_and_writes = wf.read(|_w| {
       let kind = _w.kind(id);
 
-      _w.with_executor(kind, |executor| {
+      _w.with_executor(kind.clone(), |executor| {
         executor.execute(id, &msg, self.world.clone(), &mut self.state, |lua_ctx| {
           let globals = lua_ctx.globals();
           let orisa: rlua::Table = globals.get("orisa")?;
           orisa.set("self", id)?;
           let main: rlua::Function = globals.get("main")?;
 
-          main.call::<_, ()>((msg.immediate_sender, msg.name.clone(), msg.payload.clone()))
+          main.call::<_, ()>((
+            kind,
+            msg.immediate_sender,
+            msg.name.clone(),
+            msg.payload.clone(),
+          ))
         })
       })
+    });
+
+    let wf = self.world.clone();
+    res_and_writes.map(|(res, writes)| {
+      wf.write(|w| {
+        for write in writes.iter() {
+          write.commit(w)
+        }
+      });
+      res
     })
   }
 

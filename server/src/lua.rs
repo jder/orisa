@@ -1,4 +1,3 @@
-use crate::world::Id;
 use rlua;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -9,10 +8,8 @@ use std::path::{Path, PathBuf};
 #[derive(Clone)]
 pub struct LuaHost {
   root: PathBuf,
-  source: Vec<u8>,
+  extra_source: Option<String>,
 }
-
-impl rlua::UserData for Id {}
 
 impl LuaHost {
   pub fn fresh_state(&self) -> rlua::Result<rlua::Lua> {
@@ -64,11 +61,26 @@ impl LuaHost {
         })?,
       )?;
 
-      lua_ctx.load(&self.source).exec()?;
+      match &self.extra_source {
+        Some(content) => lua_ctx.load(content).exec()?,
+        None => lua_ctx
+          .load(
+            &LuaHost::load_unchecked_path(&self.root.join(Path::new("main.lua")))
+              .map_err(|e| rlua::Error::external(e))?,
+          )
+          .exec()?,
+      };
 
       Ok(())
     })?;
     Ok(lua)
+  }
+
+  pub fn with_source(&self, source: &str) -> LuaHost {
+    LuaHost {
+      root: self.root.clone(),
+      extra_source: Some(source.to_string()),
+    }
   }
 
   fn load_string(lua_ctx: rlua::Context, source: String) -> rlua::Result<rlua::Function> {
@@ -92,7 +104,7 @@ impl LuaHost {
         "Can't require outside of root",
       ))
     } else {
-      LuaHost::load(&path)
+      LuaHost::load_unchecked_path(&path)
     }
   }
 
@@ -100,16 +112,11 @@ impl LuaHost {
     let canonical_root = root.to_path_buf().canonicalize()?;
     Ok(LuaHost {
       root: canonical_root.clone(),
-      source: LuaHost::load(&canonical_root.join("main.lua"))?,
+      extra_source: None,
     })
   }
 
-  pub fn reload(&mut self) -> std::io::Result<()> {
-    self.source = LuaHost::load(&self.root.join("main.lua"))?;
-    Ok(())
-  }
-
-  fn load(p: &Path) -> std::io::Result<Vec<u8>> {
+  fn load_unchecked_path(p: &Path) -> std::io::Result<Vec<u8>> {
     let mut f = File::open(p)?;
     let mut v: Vec<u8> = vec![];
     f.read_to_end(&mut v)?;
