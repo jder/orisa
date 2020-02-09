@@ -68,7 +68,7 @@ fn edit_file(_lua_ctx: rlua::Context, (name, content): (String, String)) -> rlua
   Ok(())
 }
 
-fn get_name(_lua_ctx: rlua::Context, id: Id) -> rlua::Result<String> {
+fn get_username(_lua_ctx: rlua::Context, id: Id) -> rlua::Result<Option<String>> {
   Ok(S::with_world(|w| w.username(id)))
 }
 
@@ -162,7 +162,7 @@ pub(super) fn register_api(lua_ctx: rlua::Context) -> rlua::Result<()> {
 
   orisa.set("get_children", lua_ctx.create_function(get_children)?)?;
   orisa.set("get_parent", lua_ctx.create_function(get_parent)?)?;
-  orisa.set("get_name", lua_ctx.create_function(get_name)?)?;
+  orisa.set("get_username", lua_ctx.create_function(get_username)?)?;
   orisa.set("get_kind", lua_ctx.create_function(get_kind)?)?;
   orisa.set("set_state", lua_ctx.create_function(set_state)?)?;
   orisa.set("get_state", lua_ctx.create_function(get_state)?)?;

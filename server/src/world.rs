@@ -202,13 +202,13 @@ impl World {
     }
   }
 
-  pub fn username(&self, id: Id) -> String {
+  pub fn username(&self, id: Id) -> Option<String> {
     for (key, value) in self.state.users.iter() {
       if *value == id {
-        return key.to_string();
+        return Some(key.to_string());
       }
     }
-    return id.to_string();
+    None
   }
 
   pub fn children(&self, id: Id) -> impl Iterator<Item = Id> + '_ {
