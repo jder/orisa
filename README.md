@@ -24,10 +24,10 @@ Note that the config and dockerfiles are aimed at production use, not developmen
 
 * chat history
 * hot reload!
+* logging of lua errors via console.log or similar
 * passwords
 * ping/pong
-* private object state (orisa.set_state("foo", "whatever")) and public attrs orisa.get_attr(object, "foo") / orisa.set_attr("foo", "something")
+* public attrs orisa.get_attr(object, "foo") / orisa.set_attr("foo", "something")
 * presence
-* Send lua code from UI to be evalued in your user object
 * capability model
 * Reload lua code from github via command

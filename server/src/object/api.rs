@@ -10,6 +10,10 @@ pub fn get_children(_lua_ctx: rlua::Context, object_id: Id) -> rlua::Result<Vec<
   }))
 }
 
+pub fn get_parent(_lua_ctx: rlua::Context, object_id: Id) -> rlua::Result<Option<Id>> {
+  Ok(S::with_world(|w| w.parent(object_id)))
+}
+
 pub fn send(
   _lua_ctx: rlua::Context,
   (object_id, name, payload): (Id, String, SerializableValue),
@@ -82,6 +86,7 @@ pub(super) fn register_api(lua_ctx: rlua::Context) -> rlua::Result<()> {
   let orisa = lua_ctx.create_table()?;
 
   orisa.set("get_children", lua_ctx.create_function(get_children)?)?;
+  orisa.set("get_parent", lua_ctx.create_function(get_parent)?)?;
   orisa.set("send", lua_ctx.create_function(send)?)?;
   orisa.set("tell", lua_ctx.create_function(tell)?)?;
   orisa.set("get_name", lua_ctx.create_function(get_name)?)?;

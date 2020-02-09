@@ -76,31 +76,20 @@ impl ChatSocket {
     });
   }
 
-  fn handle_say(&self, text: &str, ctx: &mut ws::WebsocketContext<Self>) {
+  fn handle_say(&self, text: &str, _ctx: &mut ws::WebsocketContext<Self>) {
     if self.self_id.is_none() {
       log::warn!("Got tell when had no id")
     } else {
       self.app_data.world_ref.read(|world| {
-        if let Some(container) = world.parent(self.id()) {
-          world.send_message(
-            container,
-            ObjectMessage {
-              immediate_sender: self.id(),
-              name: "say".to_string(),
-              payload: SerializableValue::String(text.to_string()),
-            },
-          );
-        } else {
-          self
-            .send_to_client(
-              &ToClientMessage::Tell {
-                content: ChatRowContent::new("You aren't anywhere."),
-              },
-              ctx,
-            )
-            .unwrap();
-        }
-      });
+        world.send_message(
+          self.id(),
+          ObjectMessage {
+            immediate_sender: self.id(),
+            name: "say".to_string(),
+            payload: SerializableValue::String(text.to_string()),
+          },
+        )
+      })
     }
   }
 
