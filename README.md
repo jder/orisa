@@ -24,9 +24,10 @@ Note that the config and dockerfiles are aimed at production use, not developmen
 
 * public attrs orisa.get_attr(object, "foo") / orisa.set_attr("foo", "something")
 * presence
-* capability model
+* in-UI editing of code somehow
 * Reload lua code from github via command
 * Make print! go to console logs, too
+* capability model
 * ping/pong
 * nicer eval allowing multiline, blocks, etc, like lua playground
 * passwords
