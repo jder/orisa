@@ -1,11 +1,11 @@
 use crate::chat::ToClientMessage;
-use crate::lua::LuaHost;
-use crate::object::actor::ObjectActorState;
-use crate::object::actor::ObjectMessage;
+use crate::lua::{LuaHost, SerializableValue};
+use crate::object::actor::{ObjectActorState, ObjectMessage};
 use crate::object::api;
 use crate::world::{Id, ObjectKind, World, WorldRef};
 use rlua;
 use std::cell::RefCell;
+use std::collections::HashMap;
 
 pub struct ObjectExecutor {
   generation: i64,
@@ -46,6 +46,7 @@ impl ObjectExecutor {
       world: wf.clone(),
       object_state: RefCell::new(object_state),
       writes: RefCell::new(Vec::new()),
+      changed_attrs: RefCell::new(HashMap::new()),
     };
 
     // we hold a read lock on the world as a simple form of "transaction isolation" for now
@@ -71,8 +72,8 @@ impl ObjectExecutor {
       for write in state.writes.borrow().iter() {
         write.commit(w)
       }
+      w.set_attrs(id, state.changed_attrs.borrow().clone())
     });
-
     result
   }
 }
@@ -123,6 +124,7 @@ pub(super) struct ExecutionState<'a> {
   world: WorldRef,
   object_state: RefCell<&'a mut ObjectActorState>,
   writes: RefCell<Vec<GlobalWrite>>,
+  changed_attrs: RefCell<HashMap<String, SerializableValue>>,
 }
 
 impl<'a> ExecutionState<'a> {
@@ -142,6 +144,13 @@ impl<'a> ExecutionState<'a> {
 
   pub(super) fn add_write(write: GlobalWrite) {
     Self::with_state(|s| s.writes.borrow_mut().push(write))
+  }
+
+  pub(super) fn with_changed_attrs<T, F>(body: F) -> T
+  where
+    F: FnOnce(&mut HashMap<String, SerializableValue>) -> T,
+  {
+    Self::with_state(|s| body(&mut s.changed_attrs.borrow_mut()))
   }
 
   pub(super) fn with_world<T, F>(body: F) -> T

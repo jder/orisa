@@ -22,11 +22,9 @@ Note that the config and dockerfiles are aimed at production use, not developmen
 
 # TODO
 
-* public attrs orisa.get_attr(object, "foo") / orisa.set_attr("foo", "something")
 * presence
 * simple commands like look, inspect
 * commands for object/room/door creation and editing
-* in-UI editing of code somehow
 * Reload lua code from github via command
 * Make print! go to console logs, too
 * ping/pong

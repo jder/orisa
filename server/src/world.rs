@@ -1,5 +1,5 @@
 use crate::chat::{ChatSocket, ToClientMessage};
-use crate::lua::LuaHost;
+use crate::lua::{LuaHost, SerializableValue};
 use crate::object::actor::*;
 use crate::object::executor::{ExecutorCache, ObjectExecutor};
 use actix::{Actor, Addr, Arbiter, Message};
@@ -113,6 +113,7 @@ pub struct WorldState {
   entrance_id: Option<Id>, // only None during initialization
   users: HashMap<String, Id>,
   custom_spaces: HashMap<ObjectKind, String>, // string is lua code
+  object_attrs: HashMap<Id, HashMap<String, SerializableValue>>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -294,6 +295,7 @@ impl World {
         entrance_id: None,
         users: HashMap::new(),
         custom_spaces: HashMap::new(),
+        object_attrs: HashMap::new(),
       },
       arbiter: arbiter,
       own_ref: world_ref.clone(),
@@ -339,6 +341,19 @@ impl World {
   pub fn set_custom_space_content(&mut self, kind: ObjectKind, content: String) {
     self.state.custom_spaces.insert(kind, content);
     self.reload_code(); // TODO: restrict to just this kind
+  }
+
+  pub fn set_attrs(&mut self, id: Id, new_attrs: HashMap<String, SerializableValue>) {
+    let attrs = self.state.object_attrs.entry(id).or_default();
+    attrs.extend(new_attrs.into_iter())
+  }
+
+  pub fn get_attr(&self, id: Id, name: &str) -> Option<SerializableValue> {
+    return self
+      .state
+      .object_attrs
+      .get(&id)
+      .and_then(|attrs| attrs.get(name).map(|v| v.clone()));
   }
 
   pub fn freeze(world_ref: WorldRef, w: impl Write) -> Result<(), serde_json::Error> {

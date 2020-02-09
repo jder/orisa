@@ -105,6 +105,32 @@ fn get_state(_lua_ctx: rlua::Context, (id, key): (Id, String)) -> rlua::Result<S
   }
 }
 
+fn set_attr(
+  _lua_ctx: rlua::Context,
+  (id, key, value): (Id, String, SerializableValue),
+) -> rlua::Result<SerializableValue> {
+  if id != S::get_id() {
+    // Someday we might relax this given capabilities and probably containment (for concurrency)
+    Err(rlua::Error::external("Can only set your own attrs."))
+  } else {
+    Ok(
+      S::with_changed_attrs(|changed_attrs| changed_attrs.insert(key.clone(), value))
+        .or_else(|| S::with_world(|w| w.get_attr(id, &key)))
+        .unwrap_or(SerializableValue::Nil),
+    )
+  }
+}
+
+fn get_attr(_lua_ctx: rlua::Context, (id, key): (Id, String)) -> rlua::Result<SerializableValue> {
+  let self_id = S::get_id();
+  if id == self_id {
+    if let Some(changed) = S::with_changed_attrs(|attrs| attrs.get(&key).map(|v| v.clone())) {
+      return Ok(changed);
+    }
+  }
+  Ok(S::with_world(|w| w.get_attr(id, &key)).unwrap_or(SerializableValue::Nil))
+}
+
 fn get_custom_space_content(_lua_ctx: rlua::Context, name: String) -> rlua::Result<Option<String>> {
   Ok(S::with_world(|w| {
     w.get_custom_space_content(ObjectKind::new(&name))
@@ -140,6 +166,8 @@ pub(super) fn register_api(lua_ctx: rlua::Context) -> rlua::Result<()> {
   orisa.set("get_kind", lua_ctx.create_function(get_kind)?)?;
   orisa.set("set_state", lua_ctx.create_function(set_state)?)?;
   orisa.set("get_state", lua_ctx.create_function(get_state)?)?;
+  orisa.set("set_attr", lua_ctx.create_function(set_attr)?)?;
+  orisa.set("get_attr", lua_ctx.create_function(get_attr)?)?;
 
   orisa.set("edit_file", lua_ctx.create_function(edit_file)?)?;
   orisa.set(
