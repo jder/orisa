@@ -1,6 +1,7 @@
 use crate::chat::{ChatSocket, ToClientMessage};
 use crate::lua::LuaHost;
 use crate::object::actor::*;
+use crate::object::executor::{ExecutorCache, ObjectExecutor};
 use actix::{Actor, Addr, Arbiter, Message};
 use futures::executor;
 use futures::stream::FuturesUnordered;
@@ -11,7 +12,7 @@ use serde_json;
 use std::collections::HashMap;
 use std::fmt;
 use std::io::{Read, Write};
-use std::sync::{Arc, RwLock, Weak};
+use std::sync::{Arc, Mutex, RwLock, Weak};
 
 #[derive(Debug, PartialEq, Clone, Copy, Hash, Eq, Deserialize, Serialize)]
 pub struct Id(usize);
@@ -52,6 +53,7 @@ pub struct World {
   own_ref: WorldRef,
 
   lua_host: LuaHost,
+  executor_caches: Mutex<HashMap<ObjectKind, ExecutorCache>>,
 
   chat_connections: MultiMap<Id, Addr<ChatSocket>>,
 
@@ -108,9 +110,8 @@ impl World {
     let id = Id(self.state.objects.len());
 
     let world_ref = self.own_ref.clone();
-    let host = self.lua_host.clone();
     let addr = ObjectActor::start_in_arbiter(&self.arbiter, move |_ctx| {
-      ObjectActor::new(id, world_ref, None, &host)
+      ObjectActor::new(id, world_ref, None)
     });
 
     let o = Object {
@@ -241,6 +242,7 @@ impl World {
       actors: HashMap::new(),
       frozen: true,
       lua_host: LuaHost::new(lua_path).unwrap(),
+      executor_caches: Mutex::new(HashMap::new()),
     };
 
     {
@@ -248,6 +250,27 @@ impl World {
       *maybe_world = Some(world);
     }
     (arc, world_ref)
+  }
+
+  pub fn with_executor<T, F>(&self, kind: ObjectKind, body: F) -> rlua::Result<T>
+  where
+    F: FnOnce(&ObjectExecutor) -> rlua::Result<T>,
+  {
+    // TODO: this could be per space/user instead of kind
+    let executor = {
+      let mut caches = self.executor_caches.lock().unwrap();
+      let cache = caches
+        .entry(kind.clone())
+        .or_insert(ExecutorCache::new(&self.lua_host));
+      cache.checkout_executor()
+    };
+
+    let result = body(&executor);
+
+    let mut caches = self.executor_caches.lock().unwrap();
+    caches.get_mut(&kind).map(|c| c.checkin_executor(executor));
+
+    result
   }
 
   pub fn freeze(world_ref: WorldRef, w: impl Write) -> Result<(), serde_json::Error> {
@@ -297,10 +320,9 @@ impl World {
     for obj in self.state.objects.iter() {
       let id = obj.id;
       let world_ref = self.own_ref.clone();
-      let host = self.lua_host.clone();
       let object_state = state.actor_state.get(&id).map(|state| state.clone());
       let addr = ObjectActor::start_in_arbiter(&self.arbiter, move |_ctx| {
-        ObjectActor::new(id, world_ref, object_state, &host)
+        ObjectActor::new(id, world_ref, object_state)
       });
       self.actors.insert(id, addr);
     }

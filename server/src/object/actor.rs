@@ -1,6 +1,4 @@
-use crate::lua::LuaHost;
 use crate::lua::SerializableValue;
-use crate::object;
 use crate::world::*;
 
 use actix::{Actor, Context, Handler, Message};
@@ -12,7 +10,6 @@ pub struct ObjectActor {
   id: Id,
   world: WorldRef,
   state: ObjectActorState,
-  object_executor: object::executor::ObjectExecutor,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -21,19 +18,13 @@ pub struct ObjectActorState {
 }
 
 impl ObjectActor {
-  pub fn new(
-    id: Id,
-    world_ref: WorldRef,
-    state: Option<ObjectActorState>,
-    lua_host: &LuaHost,
-  ) -> ObjectActor {
+  pub fn new(id: Id, world_ref: WorldRef, state: Option<ObjectActorState>) -> ObjectActor {
     ObjectActor {
       id: id,
       world: world_ref,
       state: state.unwrap_or(ObjectActorState {
         persistent_state: HashMap::new(),
       }),
-      object_executor: object::executor::ObjectExecutor::new(lua_host).unwrap(),
     }
   }
 
@@ -45,9 +36,9 @@ impl ObjectActor {
     // this is not useful right now but prevents us from accidentally writing to the world
     // which could produce globally-visible effects while other objects are running.
     wf.read(|_w| {
-      self
-        .object_executor
-        .execute(id, self.world.clone(), &mut self.state, |lua_ctx| {
+      let kind = _w.kind(id);
+      _w.with_executor(kind, |executor| {
+        executor.execute(id, self.world.clone(), &mut self.state, |lua_ctx| {
           let globals = lua_ctx.globals();
           let orisa: rlua::Table = globals.get("orisa")?;
           orisa.set("self", id)?;
@@ -55,6 +46,7 @@ impl ObjectActor {
 
           main.call::<_, ()>((msg.immediate_sender, msg.name, msg.payload))
         })
+      })
     })
   }
 }
