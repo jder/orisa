@@ -311,9 +311,9 @@ impl World {
     (arc, world_ref)
   }
 
-  pub fn with_executor<T, F>(&self, kind: ObjectKind, body: F) -> rlua::Result<T>
+  pub fn with_executor<T, F>(&self, kind: ObjectKind, body: F) -> T
   where
-    F: FnOnce(&ObjectExecutor) -> rlua::Result<T>,
+    F: FnOnce(&ObjectExecutor) -> T,
   {
     // TODO: this could be per space/user instead of kind
     let executor = {

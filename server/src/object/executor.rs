@@ -30,42 +30,62 @@ impl ObjectExecutor {
     }
   }
 
-  pub fn execute<'a, F, T>(
-    &self,
+  pub fn run_for_object<'a, F, T>(
+    wf: WorldRef,
     id: Id,
     current_message: &'a ObjectMessage,
-    world: WorldRef,
     object_state: &'a mut ObjectActorState,
     body: F,
-  ) -> rlua::Result<(T, Vec<GlobalWrite>)>
-  // TODO: would be nice to not have writes cancel if there's an error
-  // but we have some typing issues with this + world executor interface
+  ) -> rlua::Result<T>
   where
     F: FnOnce(rlua::Context) -> rlua::Result<T>,
   {
     let state = ExecutionState {
       id: id,
       current_message: current_message,
-      world: world.clone(),
+      world: wf.clone(),
       object_state: RefCell::new(object_state),
       writes: RefCell::new(Vec::new()),
     };
 
-    // This is a gross hack but is safe since the scoped thread local ensures
-    // this value only exists as long as this block.
-    let result = EXECUTION_STATE.set(unsafe { make_static(&state) }, || match &self.lua_state {
-      Ok(lua_state) => lua_state.context(|lua_ctx| body(lua_ctx)),
-      Err(e) => Err(e.clone()),
+    // we hold a read lock on the world as a simple form of "transaction isolation" for now
+    // this is not useful right now but prevents us from accidentally writing to the world
+    // which could produce globally-visible effects while other objects are running.
+    let result = wf.read(|_w| {
+      let kind = _w.kind(id);
+
+      _w.with_executor(kind.clone(), |executor| {
+        // This is a gross hack but is safe since the scoped thread local ensures
+        // this value only exists as long as this block.
+        EXECUTION_STATE.set(unsafe { make_static(&state) }, || {
+          match &executor.lua_state {
+            Ok(lua_state) => lua_state.context(|lua_ctx| body(lua_ctx)),
+            Err(e) => Err(e.clone()),
+          }
+        })
+      })
     });
-    result.map(|t| {
-      let writes = state.writes.borrow().clone();
-      (t, writes)
-    })
+
+    let wf = wf.clone();
+    wf.write(|w| {
+      for write in state.writes.borrow().iter() {
+        write.commit(w)
+      }
+    });
+
+    result
   }
 }
 
 // For things we collect during execution but only commit afterwards
 // until we have a real transaction isolation story.
+// These must be semantically commutative with any reads and writes other
+// objects might do. Note that this means that attribute writes act
+// potentially async. (Since another object can read & commit between
+// your reads and commits.)
+// For example, if you read your name and another object's name, and change
+// yours if they are the same, another object might also see the same
+// thing and you could both end up changing names.
 #[derive(Clone)]
 pub enum GlobalWrite {
   SetCustomSpaceContent {
