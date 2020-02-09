@@ -23,8 +23,10 @@ Note that the config and dockerfiles are aimed at production use, not developmen
 # TODO
 
 * commands for object/room/door creation and editing
-* Reload lua code from github via command
 * Make print! go to console logs, too
+* Manual
+* release 0.1
+* Reload lua code from github via command
 * ping/pong
 * nicer eval allowing multiline, blocks, etc, like lua playground
 * passwords
