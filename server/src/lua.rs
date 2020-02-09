@@ -4,10 +4,11 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::Read;
+use std::path::{Path, PathBuf};
 
 #[derive(Clone)]
 pub struct LuaHost {
-  path: std::path::PathBuf,
+  root: PathBuf,
   source: Vec<u8>,
 }
 
@@ -23,29 +24,96 @@ impl LuaHost {
       | rlua::StdLib::MATH;
     let lua = rlua::Lua::new_with(libs);
     lua.context(|lua_ctx| {
+      // remove some sensitive things, replace load with a string-only version
+      lua_ctx.globals().set("dofile", rlua::Value::Nil)?;
+      lua_ctx.globals().set("loadfile", rlua::Value::Nil)?;
+      lua_ctx.globals().set("collectgarbage", rlua::Value::Nil)?;
+      lua_ctx
+        .globals()
+        .set("load", lua_ctx.create_function(LuaHost::load_string)?)?;
+
+      // simplified module loading
+      let root_path = self.root.clone();
+      let package = lua_ctx.create_table()?;
+      package.set("loaded", lua_ctx.create_table()?)?;
+      lua_ctx.globals().set("package", package)?;
+      lua_ctx.globals().set(
+        "require",
+        lua_ctx.create_function(move |lua_ctx, name: String| {
+          let loaded = lua_ctx
+            .globals()
+            .get::<_, rlua::Table>("package")?
+            .get::<_, rlua::Table>("loaded")?;
+          let existing = loaded.get::<_, rlua::Value>(name.clone())?;
+          if let rlua::Value::Nil = existing {
+            match LuaHost::require(root_path.clone(), &name) {
+              Err(io_err) => Err(rlua::Error::external(io_err)),
+              Ok(bytes) => lua_ctx.load(&bytes).eval().and_then(|v: rlua::Value| {
+                let maybe_populated = loaded.get::<_, rlua::Value>(name.clone())?;
+                if let rlua::Value::Nil = maybe_populated {
+                  loaded.set(name.to_string(), v.clone())?;
+                  Ok(v)
+                } else {
+                  Ok(maybe_populated)
+                }
+              }),
+            }
+          } else {
+            Ok(existing)
+          }
+        })?,
+      )?;
+
       lua_ctx.load(&self.source).exec()?;
+
       Ok(())
     })?;
     Ok(lua)
   }
 
-  pub fn new(p: &std::path::Path) -> std::io::Result<LuaHost> {
-    let mut f = File::open(&p)?;
-    let mut v: Vec<u8> = vec![];
-    f.read_to_end(&mut v)?;
+  fn load_string(lua_ctx: rlua::Context, source: String) -> rlua::Result<rlua::Function> {
+    lua_ctx.load(&source).into_function()
+  }
 
+  // For now, only allow foo.lua in the same folder.
+  // Later we should permit `system.bar` and `user/repo.bar`
+  fn require(root: PathBuf, name: &str) -> std::io::Result<Vec<u8>> {
+    let mut filename = name.to_string();
+    filename.push_str(".lua");
+    let path = root.join(Path::new(&filename)).canonicalize()?;
+    if !path.starts_with(&root) {
+      log::warn!(
+        "Trying to require {:?} but outside of root {:?}",
+        path,
+        &root
+      );
+      Err(std::io::Error::new(
+        std::io::ErrorKind::Other,
+        "Can't require outside of root",
+      ))
+    } else {
+      LuaHost::load(&path)
+    }
+  }
+
+  pub fn new(root: &Path) -> std::io::Result<LuaHost> {
+    let canonical_root = root.to_path_buf().canonicalize()?;
     Ok(LuaHost {
-      path: p.to_path_buf(),
-      source: v,
+      root: canonical_root.clone(),
+      source: LuaHost::load(&canonical_root.join("main.lua"))?,
     })
   }
 
   pub fn reload(&mut self) -> std::io::Result<()> {
-    let mut f = File::open(&self.path)?;
+    self.source = LuaHost::load(&self.root.join("main.lua"))?;
+    Ok(())
+  }
+
+  fn load(p: &Path) -> std::io::Result<Vec<u8>> {
+    let mut f = File::open(p)?;
     let mut v: Vec<u8> = vec![];
     f.read_to_end(&mut v)?;
-    self.source = v;
-    Ok(())
+    Ok(v)
   }
 }
 

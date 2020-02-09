@@ -71,8 +71,7 @@ async fn run_server() -> Result<(), std::io::Error> {
 
     // default to assuming killpop is checked out next to orisa
     let code_dir_env = env::var("ORISA_CODE_DIRECTORY").unwrap_or("../../killpop".to_string());
-    let (_world, world_ref) =
-        World::new(arbiter.clone(), &Path::new(&code_dir_env).join("main.lua"));
+    let (_world, world_ref) = World::new(arbiter.clone(), &Path::new(&code_dir_env));
 
     world_ref.write(|w| {
         if load_world(w).is_err() {
