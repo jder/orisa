@@ -7,6 +7,7 @@ use std::io::Read;
 
 #[derive(Clone)]
 pub struct LuaHost {
+  path: std::path::PathBuf,
   source: Vec<u8>,
 }
 
@@ -33,7 +34,18 @@ impl LuaHost {
     let mut v: Vec<u8> = vec![];
     f.read_to_end(&mut v)?;
 
-    Ok(LuaHost { source: v })
+    Ok(LuaHost {
+      path: p.to_path_buf(),
+      source: v,
+    })
+  }
+
+  pub fn reload(&mut self) -> std::io::Result<()> {
+    let mut f = File::open(&self.path)?;
+    let mut v: Vec<u8> = vec![];
+    f.read_to_end(&mut v)?;
+    self.source = v;
+    Ok(())
   }
 }
 

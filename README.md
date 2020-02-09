@@ -23,11 +23,9 @@ Note that the config and dockerfiles are aimed at production use, not developmen
 # TODO
 
 * chat history
-* hot reload!
-* logging of lua errors via console.log or similar
-* passwords
-* ping/pong
 * public attrs orisa.get_attr(object, "foo") / orisa.set_attr("foo", "something")
 * presence
 * capability model
 * Reload lua code from github via command
+* ping/pong
+* passwords

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import ChatHistory from './ChatHistory';
-import { ToClientMessage, isTellMessage, isBacklogMessage, ChatRowContent, SayMessage } from './Messages';
+import { ToClientMessage, isTellMessage, isBacklogMessage, ChatRowContent, SayMessage, ReloadCodeMessage, isLogMessage } from './Messages';
 import { ChatSocket } from './ChatSocket';
 import uuid from 'uuid/v4';
 
@@ -19,6 +19,9 @@ const ChatPane = (props: {username: string}) => {
           return prev.concat([message.content]);
         } else if (isBacklogMessage(message)) {
           return message.history;
+        } else if (isLogMessage(message)) {
+          console.error(message.message);
+          return prev;
         } else {
           console.error("Unrecognized message", message);
           return prev;
@@ -40,6 +43,10 @@ const ChatPane = (props: {username: string}) => {
     event.preventDefault();
   }
 
+  const handleReload = () => {
+    socket!.send(new ReloadCodeMessage())
+  }
+
   return (
     <div className="ChatPane">
       <ChatHistory rows={rows} />   
@@ -47,6 +54,7 @@ const ChatPane = (props: {username: string}) => {
         <input className="mainInput" autoFocus type="text" value={text} onChange={handleChange} />
         <input type="submit" disabled={!socket} value="Send" />
       </form>
+      <button onClick={handleReload}>Reload</button>
     </div>
   );
 }

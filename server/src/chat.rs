@@ -49,6 +49,7 @@ impl ChatSocket {
     match message {
       ToServerMessage::Login { username } => self.handle_login(&username, ctx),
       ToServerMessage::Say { text } => self.handle_say(&text, ctx),
+      ToServerMessage::ReloadCode {} => self.handle_reload(ctx),
     }
 
     Ok(())
@@ -84,6 +85,7 @@ impl ChatSocket {
         world.send_message(
           self.id(),
           ObjectMessage {
+            original_user: Some(self.id()),
             immediate_sender: self.id(),
             name: "say".to_string(),
             payload: SerializableValue::String(text.to_string()),
@@ -91,6 +93,22 @@ impl ChatSocket {
         )
       })
     }
+  }
+
+  fn handle_reload(&self, ctx: &mut ws::WebsocketContext<Self>) {
+    self
+      .app_data
+      .world_ref
+      .write(|world| world.reload_code())
+      .unwrap();
+    self
+      .send_to_client(
+        &ToClientMessage::Tell {
+          content: ChatRowContent::new(&format!("Reloaded")),
+        },
+        ctx,
+      )
+      .unwrap();
   }
 
   fn id(&self) -> Id {
@@ -140,6 +158,7 @@ impl ChatRowContent {
 pub enum ToClientMessage {
   Tell { content: ChatRowContent },
   Backlog { history: Vec<ChatRowContent> },
+  Log { message: String },
 }
 
 impl Message for ToClientMessage {
@@ -151,6 +170,7 @@ impl Message for ToClientMessage {
 enum ToServerMessage {
   Login { username: String },
   Say { text: String },
+  ReloadCode {},
 }
 
 impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for ChatSocket {
@@ -160,7 +180,6 @@ impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for ChatSocket {
       Ok(ws::Message::Text(text)) => {
         self.handle_message(&text, ctx).unwrap();
       }
-      Ok(ws::Message::Binary(bin)) => ctx.binary(bin),
       _ => (),
     }
   }

@@ -1,5 +1,6 @@
 use crate::lua::LuaHost;
 use crate::object::actor::ObjectActorState;
+use crate::object::actor::ObjectMessage;
 use crate::object::api;
 use crate::world::{Id, World, WorldRef};
 use rlua;
@@ -31,8 +32,9 @@ impl ObjectExecutor {
   pub fn execute<'a, F, T>(
     &self,
     id: Id,
+    current_message: &'a ObjectMessage,
     world: WorldRef,
-    object_state: &mut ObjectActorState,
+    object_state: &'a mut ObjectActorState,
     body: F,
   ) -> rlua::Result<T>
   where
@@ -40,6 +42,7 @@ impl ObjectExecutor {
   {
     let state = ExecutionState {
       id: id,
+      current_message: current_message,
       world: world.clone(),
       object_state: RefCell::new(object_state),
     };
@@ -55,6 +58,7 @@ impl ObjectExecutor {
 
 pub(super) struct ExecutionState<'a> {
   id: Id,
+  current_message: &'a ObjectMessage,
   world: WorldRef,
   object_state: RefCell<&'a mut ObjectActorState>,
 }
@@ -83,6 +87,10 @@ impl<'a> ExecutionState<'a> {
 
   pub(super) fn get_id() -> Id {
     Self::with_state(|s| s.id)
+  }
+
+  pub(super) fn get_original_user() -> Option<Id> {
+    Self::with_state(|s| s.current_message.original_user)
   }
 }
 

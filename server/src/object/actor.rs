@@ -1,6 +1,6 @@
+use crate::chat::ToClientMessage;
 use crate::lua::SerializableValue;
 use crate::world::*;
-
 use actix::{Actor, Context, Handler, Message};
 use rlua;
 use serde::{Deserialize, Serialize};
@@ -28,7 +28,7 @@ impl ObjectActor {
     }
   }
 
-  fn run_main(&mut self, msg: ObjectMessage) -> rlua::Result<()> {
+  fn run_main(&mut self, msg: &ObjectMessage) -> rlua::Result<()> {
     let wf = self.world.clone();
     let id = self.id;
 
@@ -37,17 +37,31 @@ impl ObjectActor {
     // which could produce globally-visible effects while other objects are running.
     wf.read(|_w| {
       let kind = _w.kind(id);
+
       _w.with_executor(kind, |executor| {
-        executor.execute(id, self.world.clone(), &mut self.state, |lua_ctx| {
+        executor.execute(id, &msg, self.world.clone(), &mut self.state, |lua_ctx| {
           let globals = lua_ctx.globals();
           let orisa: rlua::Table = globals.get("orisa")?;
           orisa.set("self", id)?;
           let main: rlua::Function = globals.get("main")?;
 
-          main.call::<_, ()>((msg.immediate_sender, msg.name, msg.payload))
+          main.call::<_, ()>((msg.immediate_sender, msg.name.clone(), msg.payload.clone()))
         })
       })
     })
+  }
+
+  fn report_error(&self, msg: &ObjectMessage, err: &rlua::Error) {
+    if let Some(user_id) = msg.original_user {
+      self.world.read(|w| {
+        w.send_client_message(
+          user_id,
+          ToClientMessage::Log {
+            message: format!("Error: {}", err).to_string(),
+          },
+        )
+      });
+    }
   }
 }
 
@@ -61,9 +75,10 @@ impl Handler<ObjectMessage> for ObjectActor {
   type Result = ();
 
   fn handle(&mut self, msg: ObjectMessage, _ctx: &mut Self::Context) {
-    let _ = self
-      .run_main(msg)
-      .map_err(|err: rlua::Error| log::error!("Failed running payload: {:?}", err));
+    let _ = self.run_main(&msg).map_err(|err: rlua::Error| {
+      self.report_error(&msg, &err);
+      log::error!("Failed running payload: {:?}", err);
+    });
   }
 }
 
@@ -81,6 +96,7 @@ impl Handler<FreezeMessage> for ObjectActor {
 #[derive(Debug)]
 pub struct ObjectMessage {
   pub immediate_sender: Id,
+  pub original_user: Option<Id>,
   pub name: String,
   pub payload: SerializableValue,
 }

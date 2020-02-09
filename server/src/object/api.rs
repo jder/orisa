@@ -22,6 +22,7 @@ pub fn send(
     w.send_message(
       object_id,
       ObjectMessage {
+        original_user: S::get_original_user(),
         immediate_sender: S::get_id(),
         name: name,
         payload: payload,

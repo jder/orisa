@@ -192,6 +192,16 @@ impl World {
       .do_send(message)
   }
 
+  pub fn reload_code(&mut self) -> std::io::Result<()> {
+    // TODO: only reload for a particular kind/space/user, etc
+    self.lua_host.reload()?;
+    let mut caches = self.executor_caches.lock().unwrap();
+    for (_, cache) in caches.iter_mut() {
+      cache.update(&self.lua_host)
+    }
+    Ok(())
+  }
+
   pub fn send_client_message(&self, id: Id, message: ToClientMessage) {
     if let Some(connections) = self.chat_connections.get_vec(&id) {
       for conn in connections.iter() {
@@ -208,11 +218,6 @@ impl World {
 
   fn get(&self, id: Id) -> &Object {
     self.state.objects.get(id.0).unwrap()
-  }
-
-  #[allow(dead_code)]
-  fn get_mut(&mut self, id: Id) -> &mut Object {
-    self.state.objects.get_mut(id.0).unwrap()
   }
 
   fn create_defaults(&mut self) {
