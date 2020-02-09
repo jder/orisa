@@ -1,3 +1,4 @@
+use crate::chat::ToClientMessage;
 use crate::lua::LuaHost;
 use crate::object::actor::ObjectActorState;
 use crate::object::actor::ObjectMessage;
@@ -37,6 +38,8 @@ impl ObjectExecutor {
     object_state: &'a mut ObjectActorState,
     body: F,
   ) -> rlua::Result<(T, Vec<GlobalWrite>)>
+  // TODO: would be nice to not have writes cancel if there's an error
+  // but we have some typing issues with this + world executor interface
   where
     F: FnOnce(rlua::Context) -> rlua::Result<T>,
   {
@@ -54,7 +57,6 @@ impl ObjectExecutor {
       Ok(lua_state) => lua_state.context(|lua_ctx| body(lua_ctx)),
       Err(e) => Err(e.clone()),
     });
-
     result.map(|t| {
       let writes = state.writes.borrow().clone();
       (t, writes)
@@ -66,7 +68,18 @@ impl ObjectExecutor {
 // until we have a real transaction isolation story.
 #[derive(Clone)]
 pub enum GlobalWrite {
-  SetCustomSpaceContent { kind: ObjectKind, content: String },
+  SetCustomSpaceContent {
+    kind: ObjectKind,
+    content: String,
+  },
+  SendMessage {
+    target: Id,
+    message: ObjectMessage,
+  },
+  SendClientMessage {
+    target: Id,
+    message: ToClientMessage,
+  },
 }
 
 impl GlobalWrite {
@@ -75,6 +88,10 @@ impl GlobalWrite {
     match self {
       GlobalWrite::SetCustomSpaceContent { kind, content } => {
         world.set_custom_space_content(kind.clone(), content.clone())
+      }
+      GlobalWrite::SendMessage { target, message } => world.send_message(*target, message.clone()),
+      GlobalWrite::SendClientMessage { target, message } => {
+        world.send_client_message(*target, message.clone())
       }
     }
   }

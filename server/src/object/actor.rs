@@ -108,7 +108,7 @@ impl Handler<FreezeMessage> for ObjectActor {
   }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ObjectMessage {
   pub immediate_sender: Id,
   pub original_user: Option<Id>,

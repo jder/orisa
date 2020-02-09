@@ -18,51 +18,54 @@ fn send(
   _lua_ctx: rlua::Context,
   (object_id, name, payload): (Id, String, SerializableValue),
 ) -> rlua::Result<()> {
-  Ok(S::with_world(|w| {
-    w.send_message(
-      object_id,
-      ObjectMessage {
-        original_user: S::get_original_user(),
-        immediate_sender: S::get_id(),
-        name: name,
-        payload: payload,
-      },
-    )
-  }))
+  let message = ObjectMessage {
+    original_user: S::get_original_user(),
+    immediate_sender: S::get_id(),
+    name: name,
+    payload: payload,
+  };
+
+  // TODO: we could optimize this by sending directly if no other writes have happened yet
+  S::add_write(GlobalWrite::SendMessage {
+    target: object_id,
+    message: message,
+  });
+
+  Ok(())
 }
 
 fn send_user_tell(_lua_ctx: rlua::Context, message: String) -> rlua::Result<()> {
-  Ok(S::with_world(|w| {
-    w.send_client_message(
-      S::get_id(),
-      ToClientMessage::Tell {
-        content: ChatRowContent::new(&message),
-      },
-    )
-  }))
+  // TODO: we could optimize this by sending directly if no other writes have happened yet
+  S::add_write(GlobalWrite::SendClientMessage {
+    target: S::get_id(),
+    message: ToClientMessage::Tell {
+      content: ChatRowContent::new(&message),
+    },
+  });
+  Ok(())
 }
 
 fn send_user_backlog(_lua_ctx: rlua::Context, messages: Vec<String>) -> rlua::Result<()> {
-  Ok(S::with_world(|w| {
-    w.send_client_message(
-      S::get_id(),
-      ToClientMessage::Backlog {
-        history: messages.iter().map(|s| ChatRowContent::new(s)).collect(),
-      },
-    )
-  }))
+  // TODO: we could optimize this by sending directly if no other writes have happened yet
+  S::add_write(GlobalWrite::SendClientMessage {
+    target: S::get_id(),
+    message: ToClientMessage::Backlog {
+      history: messages.iter().map(|s| ChatRowContent::new(s)).collect(),
+    },
+  });
+  Ok(())
 }
 
 fn edit_file(_lua_ctx: rlua::Context, (name, content): (String, String)) -> rlua::Result<()> {
-  Ok(S::with_world(|w| {
-    w.send_client_message(
-      S::get_id(),
-      ToClientMessage::EditFile {
-        name: name,
-        content: content,
-      },
-    )
-  }))
+  // TODO: we could optimize this by sending directly if no other writes have happened yet
+  S::add_write(GlobalWrite::SendClientMessage {
+    target: S::get_id(),
+    message: ToClientMessage::EditFile {
+      name: name,
+      content: content,
+    },
+  });
+  Ok(())
 }
 
 fn get_name(_lua_ctx: rlua::Context, id: Id) -> rlua::Result<String> {
