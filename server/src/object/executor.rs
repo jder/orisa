@@ -101,6 +101,11 @@ pub enum GlobalWrite {
     target: Id,
     message: ToClientMessage,
   },
+  CreateObject {
+    parent: Id,
+    kind: ObjectKind,
+    attrs: HashMap<String, SerializableValue>,
+  },
 }
 
 impl GlobalWrite {
@@ -113,6 +118,13 @@ impl GlobalWrite {
       GlobalWrite::SendMessage { target, message } => world.send_message(*target, message.clone()),
       GlobalWrite::SendClientMessage { target, message } => {
         world.send_client_message(*target, message.clone())
+      }
+      GlobalWrite::CreateObject {
+        parent,
+        kind,
+        attrs,
+      } => {
+        world.create_in(Some(*parent), kind.clone(), attrs.clone());
       }
     }
   }

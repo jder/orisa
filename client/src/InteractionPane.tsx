@@ -53,8 +53,16 @@ const InteractionPane = (props: {username: string}) => {
     socket!.send(new ReloadCodeMessage())
   }
 
-  const handleEditSave = (editFile: EditFile) => {
-    socket!.send(new SaveFileMessage(editFile.name, editFile.content))
+  const handleEditSave = () => {
+    if (editFile) {
+      socket!.send(new SaveFileMessage(editFile.name, editFile.content))
+    }
+  }
+
+  const handleEditChange = (content: string) => {
+    if (editFile) {
+      setEditFile({name: editFile?.name, content: content})
+    }
   }
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -73,7 +81,7 @@ const InteractionPane = (props: {username: string}) => {
         <input type="submit" disabled={!socket} value="Send" />
       </form>
       <button onClick={handleReload}>Reload System Code</button>
-      {editFile && <Editor editFile={editFile} onSave={handleEditSave} /> }
+      {editFile && <Editor editFile={editFile} onSave={handleEditSave} onChange={handleEditChange} /> }
     </div>
   );
 }

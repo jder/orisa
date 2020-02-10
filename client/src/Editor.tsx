@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import MonacoEditor from 'react-monaco-editor';
 
 export type EditFile = {
@@ -6,43 +6,35 @@ export type EditFile = {
   content: string
 }
 
-type SaveCallback = (file: EditFile) => void;
+type SaveCallback = () => void;
 
-const Editor = (props: {editFile: EditFile, onSave: SaveCallback}) => {
+type ChangeCallback = (content: string) => void;
+
+const Editor = (props: {editFile: EditFile, onSave: SaveCallback, onChange: ChangeCallback}) => {
   
-    const { editFile, onSave } = props;
-
-    let [content, setContent] = useState(editFile.content);
+    const { editFile, onSave, onChange } = props;
 
     const options = {
       selectOnLineNumbers: true
     };
 
-    const handleChange = (value: string) => {
-      setContent(value);
+    const handleDidMount = (editor: any) => {
+      editor.getModel().updateOptions({ tabSize: 2 })
     }
-
-    const handleSave = () => {
-      const newFile = {
-        name: editFile.name,
-        content: content
-      };
-      onSave(newFile);
-    }
-
 
     return (
       <div className="Editor">
         <div className="header">Editing file {editFile.name}</div>
-        <button onClick={handleSave}>Save</button>
+        <button onClick={onSave}>Save</button>
         <MonacoEditor
           width="800"
           height="600"
           language="lua"
           theme="vs-dark"
-          value={content}
+          value={editFile.content}
+          editorDidMount={handleDidMount}
           options={options}
-          onChange={handleChange}
+          onChange={onChange}
         />
       </div>
     );

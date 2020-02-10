@@ -3,6 +3,7 @@ use crate::lua::*;
 use crate::object::actor::ObjectMessage;
 use crate::object::executor::{ExecutionState as S, GlobalWrite};
 use crate::world::{Id, ObjectKind};
+use std::collections::HashMap;
 
 fn get_children(_lua_ctx: rlua::Context, object_id: Id) -> rlua::Result<Vec<Id>> {
   Ok(S::with_world(|w| {
@@ -56,7 +57,10 @@ fn send_user_backlog(_lua_ctx: rlua::Context, messages: Vec<String>) -> rlua::Re
   Ok(())
 }
 
-fn edit_file(_lua_ctx: rlua::Context, (name, content): (String, String)) -> rlua::Result<()> {
+fn send_user_edit_file(
+  _lua_ctx: rlua::Context,
+  (name, content): (String, String),
+) -> rlua::Result<()> {
   // TODO: we could optimize this by sending directly if no other writes have happened yet
   S::add_write(GlobalWrite::SendClientMessage {
     target: S::get_id(),
@@ -149,6 +153,41 @@ fn send_save_custom_space_content(
   Ok(())
 }
 
+fn send_create_object(
+  _lua_ctx: rlua::Context,
+  (parent, kind, attrs_in): (Id, ObjectKind, SerializableValue),
+) -> rlua::Result<()> {
+  let mut attrs = HashMap::new();
+  match attrs_in {
+    SerializableValue::Nil => {}
+    SerializableValue::Table(pairs) => {
+      for (k, v) in pairs.iter() {
+        if let SerializableValue::String(s) = k {
+          attrs.insert(s.clone(), v.clone());
+        } else {
+          return Err(rlua::Error::external(format!(
+            "Expected table of string -> value for attrs, got key {:?}",
+            k
+          )));
+        }
+      }
+    }
+    _ => {
+      return Err(rlua::Error::external(
+        "Expected table of string -> value for attrs",
+      ))
+    }
+  }
+
+  S::add_write(GlobalWrite::CreateObject {
+    parent: parent,
+    kind: kind,
+    attrs: attrs,
+  });
+
+  Ok(())
+}
+
 pub(super) fn register_api(lua_ctx: rlua::Context) -> rlua::Result<()> {
   let globals = lua_ctx.globals();
   let orisa = lua_ctx.create_table()?;
@@ -159,7 +198,14 @@ pub(super) fn register_api(lua_ctx: rlua::Context) -> rlua::Result<()> {
     "send_user_backlog",
     lua_ctx.create_function(send_user_backlog)?,
   )?;
-
+  orisa.set(
+    "send_user_edit_file",
+    lua_ctx.create_function(send_user_edit_file)?,
+  )?;
+  orisa.set(
+    "send_create_object",
+    lua_ctx.create_function(send_create_object)?,
+  )?;
   orisa.set("get_children", lua_ctx.create_function(get_children)?)?;
   orisa.set("get_parent", lua_ctx.create_function(get_parent)?)?;
   orisa.set("get_username", lua_ctx.create_function(get_username)?)?;
@@ -169,7 +215,6 @@ pub(super) fn register_api(lua_ctx: rlua::Context) -> rlua::Result<()> {
   orisa.set("set_attr", lua_ctx.create_function(set_attr)?)?;
   orisa.set("get_attr", lua_ctx.create_function(get_attr)?)?;
 
-  orisa.set("edit_file", lua_ctx.create_function(edit_file)?)?;
   orisa.set(
     "get_custom_space_content",
     lua_ctx.create_function(get_custom_space_content)?,
