@@ -25,9 +25,10 @@ Note that the config and dockerfiles are aimed at production use, not developmen
 * commands for movement
 * Manual
 * release 0.1
+* text styling, especially for entered commands
 * Reload lua code from github via command
 * ping/pong
 * nicer eval allowing multiline, blocks, etc, like lua playground
-* passwords
+* passwords, only allow editing of types in your spaceusername
 * capability model, isolated spaces
   * allow super calls which cross spaces, not just via code

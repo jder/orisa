@@ -37,6 +37,7 @@ impl ObjectActor {
       let globals = lua_ctx.globals();
       let orisa: rlua::Table = globals.get("orisa")?;
       orisa.set("self", id)?;
+      orisa.set("original_user", msg.original_user)?;
       let main: rlua::Function = globals.get("main")?;
 
       let kind = wf.read(|w| w.kind(id));

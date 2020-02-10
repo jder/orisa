@@ -155,7 +155,7 @@ fn send_save_custom_space_content(
 
 fn send_create_object(
   _lua_ctx: rlua::Context,
-  (parent, kind, attrs_in): (Id, ObjectKind, SerializableValue),
+  (parent, kind, attrs_in): (Option<Id>, ObjectKind, SerializableValue),
 ) -> rlua::Result<()> {
   let mut attrs = HashMap::new();
   match attrs_in {
@@ -185,6 +185,20 @@ fn send_create_object(
     attrs: attrs,
   });
 
+  Ok(())
+}
+
+fn send_move_object(
+  _lua_ctx: rlua::Context,
+  (child, new_parent): (Id, Option<Id>),
+) -> rlua::Result<()> {
+  if child != S::get_id() {
+    return Err(rlua::Error::external("only an object can move itself"));
+  }
+  S::add_write(GlobalWrite::MoveObject {
+    child: child,
+    new_parent: new_parent,
+  });
   Ok(())
 }
 
@@ -243,6 +257,11 @@ pub(super) fn register_api(lua_ctx: rlua::Context) -> rlua::Result<()> {
     "send_create_object",
     lua_ctx.create_function(send_create_object)?,
   )?;
+  orisa.set(
+    "send_move_object",
+    lua_ctx.create_function(send_move_object)?,
+  )?;
+
   orisa.set("get_children", lua_ctx.create_function(get_children)?)?;
   orisa.set("get_parent", lua_ctx.create_function(get_parent)?)?;
   orisa.set("get_username", lua_ctx.create_function(get_username)?)?;

@@ -102,9 +102,13 @@ pub enum GlobalWrite {
     message: ToClientMessage,
   },
   CreateObject {
-    parent: Id,
+    parent: Option<Id>,
     kind: ObjectKind,
     attrs: HashMap<String, SerializableValue>,
+  },
+  MoveObject {
+    child: Id,
+    new_parent: Option<Id>,
   },
 }
 
@@ -124,7 +128,10 @@ impl GlobalWrite {
         kind,
         attrs,
       } => {
-        world.create_in(Some(*parent), kind.clone(), attrs.clone());
+        world.create_in(*parent, kind.clone(), attrs.clone());
+      }
+      GlobalWrite::MoveObject { child, new_parent } => {
+        world.move_object(*child, *new_parent);
       }
     }
   }

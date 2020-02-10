@@ -280,6 +280,10 @@ impl World {
     self.state.objects.get(id.0).unwrap()
   }
 
+  fn get_mut(&mut self, id: Id) -> &mut Object {
+    self.state.objects.get_mut(id.0).unwrap()
+  }
+
   fn create_defaults(&mut self) {
     let entrance = self.create_in(None, ObjectKind::room(), HashMap::new());
     self.state.entrance_id = Some(entrance)
@@ -368,6 +372,10 @@ impl World {
       .object_attrs
       .get(&id)
       .and_then(|attrs| attrs.get(name).map(|v| v.clone()));
+  }
+
+  pub fn move_object(&mut self, child: Id, new_parent: Option<Id>) {
+    self.get_mut(child).parent_id = new_parent
   }
 
   pub fn freeze(world_ref: WorldRef, w: impl Write) -> Result<(), serde_json::Error> {
