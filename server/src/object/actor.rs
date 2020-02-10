@@ -55,7 +55,8 @@ impl ObjectActor {
         w.send_client_message(
           user_id,
           ToClientMessage::Log {
-            message: format!("Error: {}", err).to_string(),
+            level: "error".to_string(),
+            message: err.to_string(),
           },
         )
       });

@@ -131,9 +131,9 @@ impl GlobalWrite {
 }
 
 pub(super) struct ExecutionState<'a> {
-  id: Id,
-  current_message: &'a ObjectMessage,
-  world: WorldRef,
+  pub(super) id: Id,
+  pub(super) current_message: &'a ObjectMessage,
+  pub(super) world: WorldRef,
   object_state: RefCell<&'a mut ObjectActorState>,
   writes: RefCell<Vec<GlobalWrite>>,
   changed_attrs: RefCell<HashMap<String, SerializableValue>>,

@@ -188,6 +188,43 @@ fn send_create_object(
   Ok(())
 }
 
+fn print_override<'lua>(
+  lua_ctx: rlua::Context<'lua>,
+  vals: rlua::Variadic<rlua::Value<'lua>>,
+) -> rlua::Result<()> {
+  if let (Some(user_id), id, message_name) = S::with_state(|s| {
+    (
+      s.current_message.original_user,
+      s.id,
+      s.current_message.name.clone(),
+    )
+  }) {
+    let mut result = format!("{} (for {}): ", id, message_name).to_string();
+    for v in vals.iter() {
+      if let Some(s) = lua_ctx.coerce_string(v.clone())? {
+        result.push_str(s.to_str()?);
+        result.push_str(" ");
+      } else {
+        return Err(rlua::Error::external(
+          "Unable to convert value to string for printing",
+        ));
+      }
+    }
+
+    S::with_world(|w| {
+      w.send_client_message(
+        user_id,
+        ToClientMessage::Log {
+          level: "info".to_string(),
+          message: result,
+        },
+      )
+    });
+  }
+
+  Ok(())
+}
+
 pub(super) fn register_api(lua_ctx: rlua::Context) -> rlua::Result<()> {
   let globals = lua_ctx.globals();
   let orisa = lua_ctx.create_table()?;
@@ -225,5 +262,8 @@ pub(super) fn register_api(lua_ctx: rlua::Context) -> rlua::Result<()> {
   )?;
 
   globals.set("orisa", orisa)?;
+
+  globals.set("print", lua_ctx.create_function(print_override)?)?;
+
   Ok(())
 }

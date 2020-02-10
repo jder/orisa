@@ -19,7 +19,7 @@ export class ChatSocket {
     this.ws.onmessage = (event: MessageEvent) => {
       if (this.onmessage) {
         const parsed = JSON.parse(event.data);
-        console.log("got message", parsed);
+        console.debug("got message", parsed);
         this.onmessage(parsed as ToClientMessage);
       }
     }
@@ -30,7 +30,7 @@ export class ChatSocket {
       setTimeout(() => this.connect(), 5000);
     }
     this.ws.onopen = (event: Event) => {
-      console.log("websocket open");
+      console.debug("websocket open");
 
       this.send(new LoginMessage(this.username));
 
@@ -49,7 +49,7 @@ export class ChatSocket {
       console.warn("Tried to send message when websocket is closed; buffering");
       this.buffer.push(message);
     } else {
-      console.log("Sending message", message);
+      console.debug("Sending message", message);
       this.ws.send(JSON.stringify(message));
     }
   }

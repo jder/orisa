@@ -45,7 +45,7 @@ export class SaveFileMessage extends ToServerMessage {
 export type ToClientMessage = { type: string; };
 export type TellMessage = {type: string, content: ChatRowContent};
 export type BacklogMessage = {type: string, history: [ChatRowContent] };
-export type LogMessage = {type: string, message: string };
+export type LogMessage = {type: string, message: string, level: string};
 export type EditFileMessage = {type: string, name: string, content: string};
 
 export function isTellMessage(m: ToClientMessage): m is TellMessage {

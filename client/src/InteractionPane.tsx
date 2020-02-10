@@ -22,7 +22,11 @@ const InteractionPane = (props: {username: string}) => {
         } else if (isBacklogMessage(message)) {
           return message.history;
         } else if (isLogMessage(message)) {
-          console.error(message.message);
+          if (message.level == "error") {
+            console.error(message.message);
+          } else {
+            console.log(message.message);
+          }
           return prev;
         } else if (isEditFileMessage(message)) {
           setEditFile(message);

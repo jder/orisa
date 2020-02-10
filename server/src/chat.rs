@@ -166,7 +166,7 @@ impl ChatRowContent {
 pub enum ToClientMessage {
   Tell { content: ChatRowContent },
   Backlog { history: Vec<ChatRowContent> },
-  Log { message: String },
+  Log { level: String, message: String },
   EditFile { name: String, content: String },
 }
 
