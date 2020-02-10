@@ -22,7 +22,7 @@ Note that the config and dockerfiles are aimed at production use, not developmen
 
 # TODO
 
-* commands for object/room/door creation and editing
+* commands for object/room/door creation, movement and editing
 * Make print! go to console logs, too
 * Manual
 * release 0.1

@@ -153,7 +153,12 @@ impl WorldRef {
 }
 
 impl World {
-  pub fn create_in(&mut self, parent: Option<Id>, kind: ObjectKind) -> Id {
+  pub fn create_in(
+    &mut self,
+    parent: Option<Id>,
+    kind: ObjectKind,
+    attrs: HashMap<String, SerializableValue>,
+  ) -> Id {
     let id = Id(self.state.objects.len());
 
     let world_ref = self.own_ref.clone();
@@ -168,6 +173,7 @@ impl World {
     };
     self.actors.insert(id, addr);
     self.state.objects.push(o);
+    self.state.object_attrs.insert(id, attrs);
     id
   }
 
@@ -196,7 +202,7 @@ impl World {
       *id
     } else {
       let entrance = self.entrance();
-      let id = self.create_in(Some(entrance), ObjectKind::user());
+      let id = self.create_in(Some(entrance), ObjectKind::user(), HashMap::new());
       self.state.users.insert(username.to_string(), id);
       id
     }
@@ -275,7 +281,7 @@ impl World {
   }
 
   fn create_defaults(&mut self) {
-    let entrance = self.create_in(None, ObjectKind::room());
+    let entrance = self.create_in(None, ObjectKind::room(), HashMap::new());
     self.state.entrance_id = Some(entrance)
   }
 
@@ -335,10 +341,18 @@ impl World {
   }
 
   pub fn get_custom_space_content(&self, kind: ObjectKind) -> Option<&String> {
+    if kind.0.starts_with("system/") {
+      return None;
+    }
     self.state.custom_spaces.get(&kind)
   }
 
   pub fn set_custom_space_content(&mut self, kind: ObjectKind, content: String) {
+    // TODO: per-user permissions
+    if kind.0.starts_with("system/") {
+      log::warn!("Ignoring request to set system space");
+      return;
+    }
     self.state.custom_spaces.insert(kind, content);
     self.reload_code(); // TODO: restrict to just this kind
   }
