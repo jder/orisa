@@ -3,6 +3,7 @@ use crate::lua::*;
 use crate::object::actor::ObjectMessage;
 use crate::object::executor::{ExecutionState as S, GlobalWrite};
 use crate::world::{Id, ObjectKind};
+use std::collections::HashMap;
 
 fn get_children(_lua_ctx: rlua::Context, object_id: Id) -> rlua::Result<Vec<Id>> {
   Ok(S::with_world(|w| {
@@ -177,11 +178,21 @@ fn send_move_object(
   if child != S::get_id() {
     return Err(rlua::Error::external("only an object can move itself"));
   }
+
+  // TODO: this boilerplate is horrible; surely we can do somethig nicer
+  let mut info: HashMap<String, SerializableValue> = HashMap::new();
+  info.insert("child".to_string(), SerializableValue::String(child.to_string()));
+  info.insert("old_parent".to_string(), S::with_world(|w| w.parent(child)).map(|p| SerializableValue::String(p.to_string())).unwrap_or(SerializableValue::Nil));
+  info.insert("new_parent".to_string(), new_parent.map(|p| SerializableValue::String(p.to_string())).unwrap_or(SerializableValue::Nil));
+  let payload = SerializableValue::Dict(info);
+
   S::add_write(GlobalWrite::MoveObject {
     child: child,
     new_parent: new_parent,
+    sender: S::get_id(),
+    payload: payload,
+    original_user: S::get_original_user()
   });
-  // TODO: send a message here like "created" so object can react to being moved.
   Ok(())
 }
 

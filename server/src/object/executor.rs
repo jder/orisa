@@ -109,6 +109,9 @@ pub enum GlobalWrite {
   MoveObject {
     child: Id,
     new_parent: Option<Id>,
+    original_user: Option<Id>,
+    sender: Id,
+    payload: SerializableValue
   },
 }
 
@@ -131,8 +134,23 @@ impl GlobalWrite {
         let id = world.create_in(*parent, kind.clone());
         world.send_message(id, init_message.clone())
       }
-      GlobalWrite::MoveObject { child, new_parent } => {
+      GlobalWrite::MoveObject { child, new_parent, original_user, sender, payload} => {
         world.move_object(*child, *new_parent);
+        world.send_message(*child, ObjectMessage {
+          original_user: *original_user,
+          immediate_sender: *sender,
+          name: "parent_changed".to_string(),
+          payload: payload.clone(),
+        });
+
+        new_parent.map(|p| {
+          world.send_message(p, ObjectMessage {
+            original_user: *original_user,
+            immediate_sender: *sender,
+            name: "child_added".to_string(),
+            payload: payload.clone(),
+          });
+        });
       }
     }
   }
