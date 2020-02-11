@@ -3,7 +3,6 @@ use crate::lua::*;
 use crate::object::actor::ObjectMessage;
 use crate::object::executor::{ExecutionState as S, GlobalWrite};
 use crate::world::{Id, ObjectKind};
-use std::collections::HashMap;
 
 fn get_children(_lua_ctx: rlua::Context, object_id: Id) -> rlua::Result<Vec<Id>> {
   Ok(S::with_world(|w| {
@@ -155,34 +154,17 @@ fn send_save_custom_space_content(
 
 fn send_create_object(
   _lua_ctx: rlua::Context,
-  (parent, kind, attrs_in): (Option<Id>, ObjectKind, SerializableValue),
+  (parent, kind, created_payload): (Option<Id>, ObjectKind, SerializableValue),
 ) -> rlua::Result<()> {
-  let mut attrs = HashMap::new();
-  match attrs_in {
-    SerializableValue::Nil => {}
-    SerializableValue::Table(pairs) => {
-      for (k, v) in pairs.iter() {
-        if let SerializableValue::String(s) = k {
-          attrs.insert(s.clone(), v.clone());
-        } else {
-          return Err(rlua::Error::external(format!(
-            "Expected table of string -> value for attrs, got key {:?}",
-            k
-          )));
-        }
-      }
-    }
-    _ => {
-      return Err(rlua::Error::external(
-        "Expected table of string -> value for attrs",
-      ))
-    }
-  }
-
   S::add_write(GlobalWrite::CreateObject {
     parent: parent,
     kind: kind,
-    attrs: attrs,
+    init_message: ObjectMessage {
+      original_user: S::get_original_user(),
+      immediate_sender: S::get_id(),
+      name: "created".to_string(),
+      payload: created_payload,
+    },
   });
 
   Ok(())

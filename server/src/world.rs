@@ -153,12 +153,7 @@ impl WorldRef {
 }
 
 impl World {
-  pub fn create_in(
-    &mut self,
-    parent: Option<Id>,
-    kind: ObjectKind,
-    attrs: HashMap<String, SerializableValue>,
-  ) -> Id {
+  pub fn create_in(&mut self, parent: Option<Id>, kind: ObjectKind) -> Id {
     let id = Id(self.state.objects.len());
 
     let world_ref = self.own_ref.clone();
@@ -173,7 +168,6 @@ impl World {
     };
     self.actors.insert(id, addr);
     self.state.objects.push(o);
-    self.state.object_attrs.insert(id, attrs);
     id
   }
 
@@ -202,7 +196,7 @@ impl World {
       *id
     } else {
       let entrance = self.entrance();
-      let id = self.create_in(Some(entrance), ObjectKind::user(), HashMap::new());
+      let id = self.create_in(Some(entrance), ObjectKind::user());
       self.state.users.insert(username.to_string(), id);
       id
     }
@@ -285,7 +279,7 @@ impl World {
   }
 
   fn create_defaults(&mut self) {
-    let entrance = self.create_in(None, ObjectKind::room(), HashMap::new());
+    let entrance = self.create_in(None, ObjectKind::room());
     self.state.entrance_id = Some(entrance)
   }
 

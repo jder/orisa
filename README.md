@@ -19,16 +19,3 @@ A quick hack building a Lua-based MOO in Rust with a React UI.
 * `docker-compose up --build` will build & run two containers and expose on port 80.
 
 Note that the config and dockerfiles are aimed at production use, not development.
-
-# TODO
-
-* commands for movement
-* Manual
-* release 0.1
-* text styling, especially for entered commands
-* Reload lua code from github via command
-* ping/pong
-* nicer eval allowing multiline, blocks, etc, like lua playground
-* passwords, only allow editing of types in your spaceusername
-* capability model, isolated spaces
-  * allow super calls which cross spaces, not just via code
