@@ -56,8 +56,8 @@ impl ObjectKind {
     ObjectKind(name.to_string())
   }
 
-  fn user() -> ObjectKind {
-    ObjectKind::new("system/user")
+  fn user(username: &str) -> ObjectKind {
+    ObjectKind::new(&format!("system/{}", username))
   }
   fn room() -> ObjectKind {
     ObjectKind::new("system/room")
@@ -196,7 +196,7 @@ impl World {
       *id
     } else {
       let entrance = self.entrance();
-      let id = self.create_in(Some(entrance), ObjectKind::user());
+      let id = self.create_in(Some(entrance), ObjectKind::user(username));
       self.state.users.insert(username.to_string(), id);
       id
     }
