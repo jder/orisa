@@ -45,7 +45,7 @@ impl LuaHost {
           if let rlua::Value::Nil = existing {
             match LuaHost::require(root_path.clone(), &name) {
               Err(io_err) => Err(rlua::Error::external(io_err)),
-              Ok(bytes) => lua_ctx.load(&bytes).eval().and_then(|v: rlua::Value| {
+              Ok(bytes) => lua_ctx.load(&bytes).set_name(&name)?.eval().and_then(|v: rlua::Value| {
                 let maybe_populated = loaded.get::<_, rlua::Value>(name.clone())?;
                 if let rlua::Value::Nil = maybe_populated {
                   loaded.set(name.to_string(), v.clone())?;

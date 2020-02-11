@@ -181,6 +181,7 @@ fn send_move_object(
     child: child,
     new_parent: new_parent,
   });
+  // TODO: send a message here like "created" so object can react to being moved.
   Ok(())
 }
 
