@@ -188,25 +188,28 @@ fn print_override<'lua>(
   lua_ctx: rlua::Context<'lua>,
   vals: rlua::Variadic<rlua::Value<'lua>>,
 ) -> rlua::Result<()> {
-  if let (Some(user_id), id, message_name) = S::with_state(|s| {
+  let (maybe_user_id, id, message_name) = S::with_state(|s| {
     (
       s.current_message.original_user,
       s.id,
       s.current_message.name.clone(),
     )
-  }) {
-    let mut result = format!("{} (for {}): ", id, message_name).to_string();
-    for v in vals.iter() {
-      if let Some(s) = lua_ctx.coerce_string(v.clone())? {
-        result.push_str(s.to_str()?);
-        result.push_str(" ");
-      } else {
-        return Err(rlua::Error::external(
-          "Unable to convert value to string for printing",
-        ));
-      }
+  });
+  let mut result = format!("{} (for {}): ", id, message_name).to_string();
+  for v in vals.iter() {
+    if let Some(s) = lua_ctx.coerce_string(v.clone())? {
+      result.push_str(s.to_str()?);
+      result.push_str(" ");
+    } else {
+      return Err(rlua::Error::external(
+        "Unable to convert value to string for printing",
+      ));
     }
+  }
 
+  log::info!("lua: {}", result);
+
+  if let Some(user_id) = maybe_user_id {
     S::with_world(|w| {
       w.send_client_message(
         user_id,
