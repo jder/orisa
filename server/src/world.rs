@@ -328,16 +328,16 @@ impl World {
 
   pub fn with_executor<T, F>(&self, kind: ObjectKind, body: F) -> T
   where
-    F: FnOnce(&ObjectExecutor) -> T,
+    F: FnOnce(&mut ObjectExecutor) -> T,
   {
     // TODO: this could be per space/user instead of kind
-    let executor = {
+    let mut executor = {
       let mut caches = self.executor_caches.lock().unwrap();
       let cache = caches.entry(kind.clone()).or_insert(ExecutorCache::new());
       cache.checkout_executor(&self.lua_host)
     };
 
-    let result = body(&executor);
+    let result = body(&mut executor);
 
     let mut caches = self.executor_caches.lock().unwrap();
     caches.get_mut(&kind).map(|c| c.checkin_executor(executor));

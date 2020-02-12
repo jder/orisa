@@ -235,14 +235,13 @@ fn print_override<'lua>(
   });
   let mut result = format!("{} (for {}): ", id, message_name).to_string();
   for v in vals.iter() {
-    if let Some(s) = lua_ctx.coerce_string(v.clone())? {
-      result.push_str(s.to_str()?);
-      result.push_str(" ");
-    } else {
-      return Err(rlua::Error::external(
-        "Unable to convert value to string for printing",
-      ));
-    }
+    let piece = match lua_ctx.coerce_string(v.clone())? {
+      Some(lua_str) => lua_str.to_str()?.to_string(),
+      None => format!("{:?}", v),
+    };
+
+    result.push_str(&piece);
+    result.push_str(" ");
   }
 
   log::info!("lua: {}", result);
@@ -262,7 +261,7 @@ fn print_override<'lua>(
   Ok(())
 }
 
-// We load pakcages in 2 flavours:
+// We load packages in 2 flavours:
 // * system.foo, which loads "foo.lua" from the filesystem.
 // * user.foo, which loads the local (in-memory) package named user.foo from the world.
 // In the future, we want to extend this to user/repo.foo

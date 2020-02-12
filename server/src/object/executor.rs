@@ -12,6 +12,7 @@ pub struct ObjectExecutor {
   // We use a Result here so that if this fails to initialize, it will
   // produce the init error when someone tries to use this executor
   lua_state: rlua::Result<rlua::Lua>,
+  loaded_main: bool,
 }
 
 impl ObjectExecutor {
@@ -20,16 +21,14 @@ impl ObjectExecutor {
 
     let ready_state: rlua::Result<rlua::Lua> = initial_state.and_then(|state| {
       state
-        .context(|lua_ctx| {
-          api::register_api(lua_ctx)?;
-          lua_host.load_system_package(lua_ctx, "main").map(|_| ()) // drop result so it doesn't outlive closure
-        })
+        .context(|lua_ctx| api::register_api(lua_ctx))
         .map(|_| state)
     });
 
     ObjectExecutor {
       lua_state: ready_state,
       generation: generation,
+      loaded_main: false,
     }
   }
 
@@ -62,8 +61,17 @@ impl ObjectExecutor {
         // This is a gross hack but is safe since the scoped thread local ensures
         // this value only exists as long as this block.
         EXECUTION_STATE.set(unsafe { make_static(&state) }, || {
-          match &executor.lua_state {
-            Ok(lua_state) => lua_state.context(|lua_ctx| body(lua_ctx)),
+          let (state, loaded_main) = (&executor.lua_state, &mut executor.loaded_main);
+
+          match state {
+            Ok(lua_state) => lua_state.context(|lua_ctx| {
+              if !*loaded_main {
+                // we try loading first so we we re-try on failures to produce the error again
+                _w.get_lua_host().load_system_package(lua_ctx, "main")?;
+                *loaded_main = true;
+              }
+              body(lua_ctx)
+            }),
             Err(e) => {
               log::error!("Lua state failed loading with {:?}; returning failure.", e);
               Err(e.clone())
