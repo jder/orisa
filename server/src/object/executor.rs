@@ -20,7 +20,10 @@ impl ObjectExecutor {
 
     let ready_state: rlua::Result<rlua::Lua> = initial_state.and_then(|state| {
       state
-        .context(|lua_ctx| api::register_api(lua_ctx))
+        .context(|lua_ctx| {
+          api::register_api(lua_ctx)?;
+          lua_host.load_system_package(lua_ctx, "main").map(|_| ()) // drop result so it doesn't outlive closure
+        })
         .map(|_| state)
     });
 
@@ -61,7 +64,10 @@ impl ObjectExecutor {
         EXECUTION_STATE.set(unsafe { make_static(&state) }, || {
           match &executor.lua_state {
             Ok(lua_state) => lua_state.context(|lua_ctx| body(lua_ctx)),
-            Err(e) => Err(e.clone()),
+            Err(e) => {
+              log::error!("Lua state failed loading with {:?}; returning failure.", e);
+              Err(e.clone())
+            }
           }
         })
       })
@@ -89,7 +95,7 @@ impl ObjectExecutor {
 // thing and you could both end up changing names.
 #[derive(Clone)]
 pub enum GlobalWrite {
-  SetCustomSpaceContent {
+  SetLocalPackageContent {
     kind: ObjectKind,
     content: String,
   },
@@ -111,7 +117,7 @@ pub enum GlobalWrite {
     new_parent: Option<Id>,
     original_user: Option<Id>,
     sender: Id,
-    payload: SerializableValue
+    payload: SerializableValue,
   },
 }
 
@@ -119,8 +125,8 @@ impl GlobalWrite {
   // TODO: would be nice to consume here but it's tricky due to the schenanigans above
   pub fn commit(&self, world: &mut World) {
     match self {
-      GlobalWrite::SetCustomSpaceContent { kind, content } => {
-        world.set_custom_space_content(kind.clone(), content.clone())
+      GlobalWrite::SetLocalPackageContent { kind, content } => {
+        world.set_local_package_content(kind.clone(), content.clone())
       }
       GlobalWrite::SendMessage { target, message } => world.send_message(*target, message.clone()),
       GlobalWrite::SendClientMessage { target, message } => {
@@ -134,22 +140,34 @@ impl GlobalWrite {
         let id = world.create_in(*parent, kind.clone());
         world.send_message(id, init_message.clone())
       }
-      GlobalWrite::MoveObject { child, new_parent, original_user, sender, payload} => {
+      GlobalWrite::MoveObject {
+        child,
+        new_parent,
+        original_user,
+        sender,
+        payload,
+      } => {
         world.move_object(*child, *new_parent);
-        world.send_message(*child, ObjectMessage {
-          original_user: *original_user,
-          immediate_sender: *sender,
-          name: "parent_changed".to_string(),
-          payload: payload.clone(),
-        });
-
-        new_parent.map(|p| {
-          world.send_message(p, ObjectMessage {
+        world.send_message(
+          *child,
+          ObjectMessage {
             original_user: *original_user,
             immediate_sender: *sender,
-            name: "child_added".to_string(),
+            name: "parent_changed".to_string(),
             payload: payload.clone(),
-          });
+          },
+        );
+
+        new_parent.map(|p| {
+          world.send_message(
+            p,
+            ObjectMessage {
+              original_user: *original_user,
+              immediate_sender: *sender,
+              name: "child_added".to_string(),
+              payload: payload.clone(),
+            },
+          );
         });
       }
     }
@@ -216,31 +234,28 @@ unsafe fn make_static<'a>(p: &'a ExecutionState<'a>) -> &'static ExecutionState<
 
 pub struct ExecutorCache {
   // keep set of executors, plus a version number to discard outdated ones
-  lua_host: LuaHost,
   current_generation: i64,
   executors: Vec<ObjectExecutor>,
 }
 
 impl ExecutorCache {
-  pub fn new(lua_host: LuaHost) -> ExecutorCache {
+  pub fn new() -> ExecutorCache {
     ExecutorCache {
-      lua_host: lua_host,
       current_generation: 0,
       executors: Vec::new(),
     }
   }
 
-  pub fn update(&mut self, lua_host: LuaHost) {
+  pub fn update(&mut self) {
     self.current_generation += 1;
-    self.lua_host = lua_host;
     self.executors.clear();
   }
 
-  pub fn checkout_executor(&mut self) -> ObjectExecutor {
+  pub fn checkout_executor(&mut self, lua_host: &LuaHost) -> ObjectExecutor {
     if let Some(executor) = self.executors.pop() {
       executor
     } else {
-      ObjectExecutor::new(&self.lua_host, self.current_generation)
+      ObjectExecutor::new(&lua_host, self.current_generation)
     }
   }
 

@@ -49,24 +49,40 @@ impl<'lua> rlua::FromLua<'lua> for Id {
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, Hash, PartialEq, Eq)]
-pub struct ObjectKind(pub String);
+pub struct ObjectKind {
+  components: Vec<String>,
+}
 
 impl ObjectKind {
   pub fn new(name: &str) -> ObjectKind {
-    ObjectKind(name.to_string())
+    let result = ObjectKind {
+      components: name.split(".").map(|s| s.to_string()).collect(),
+    };
+    // TODO: nicer error handling
+    assert!(result.components.len() == 2);
+    result
   }
 
-  fn user(username: &str) -> ObjectKind {
-    ObjectKind::new(&format!("system/{}", username))
+  pub fn user(username: &str) -> ObjectKind {
+    ObjectKind::new(&format!("{}.user", username))
   }
-  fn room() -> ObjectKind {
-    ObjectKind::new("system/room")
+
+  pub fn room() -> ObjectKind {
+    ObjectKind::new("system.room")
+  }
+
+  pub fn top_level_package(&self) -> &str {
+    &self.components.first().unwrap()
+  }
+
+  pub fn system_package() -> &'static str {
+    return "system";
   }
 }
 
 impl<'lua> rlua::ToLua<'lua> for ObjectKind {
   fn to_lua(self, lua_ctx: rlua::Context<'lua>) -> rlua::Result<rlua::Value> {
-    self.0.to_lua(lua_ctx)
+    self.components.join(".").to_lua(lua_ctx)
   }
 }
 
@@ -75,7 +91,7 @@ impl<'lua> rlua::FromLua<'lua> for ObjectKind {
     // TODO: more validation
     if let rlua::Value::String(s) = value {
       let string = s.to_str()?;
-      Ok(ObjectKind(string.to_string()))
+      Ok(ObjectKind::new(string))
     } else {
       Err(rlua::Error::external(
         "Expected a string for an object kind",
@@ -112,7 +128,7 @@ pub struct WorldState {
   objects: Vec<Object>,
   entrance_id: Option<Id>, // only None during initialization
   users: HashMap<String, Id>,
-  custom_spaces: HashMap<ObjectKind, String>, // string is lua code
+  local_packages: HashMap<ObjectKind, String>, // string is lua code
   object_attrs: HashMap<Id, HashMap<String, SerializableValue>>,
 }
 
@@ -243,17 +259,10 @@ impl World {
     log::info!("reloading code");
     // TODO: only reload for a particular kind/space/user, etc
     let mut caches = self.executor_caches.lock().unwrap();
-    for (kind, cache) in caches.iter_mut() {
-      cache.update(self.host_for_kind(kind))
+    for (_kind, cache) in caches.iter_mut() {
+      cache.update()
     }
     log::info!("finished reload");
-  }
-
-  fn host_for_kind(&self, kind: &ObjectKind) -> LuaHost {
-    match self.state.custom_spaces.get(&kind) {
-      None => self.lua_host.clone(),
-      Some(content) => self.lua_host.with_source(content),
-    }
   }
 
   pub fn send_client_message(&self, id: Id, message: ToClientMessage) {
@@ -298,7 +307,7 @@ impl World {
         objects: vec![],
         entrance_id: None,
         users: HashMap::new(),
-        custom_spaces: HashMap::new(),
+        local_packages: HashMap::new(),
         object_attrs: HashMap::new(),
       },
       arbiter: arbiter,
@@ -324,10 +333,8 @@ impl World {
     // TODO: this could be per space/user instead of kind
     let executor = {
       let mut caches = self.executor_caches.lock().unwrap();
-      let cache = caches
-        .entry(kind.clone())
-        .or_insert(ExecutorCache::new(self.host_for_kind(&kind)));
-      cache.checkout_executor()
+      let cache = caches.entry(kind.clone()).or_insert(ExecutorCache::new());
+      cache.checkout_executor(&self.lua_host)
     };
 
     let result = body(&executor);
@@ -338,20 +345,24 @@ impl World {
     result
   }
 
-  pub fn get_custom_space_content(&self, kind: ObjectKind) -> Option<&String> {
-    if kind.0.starts_with("system/") {
-      return None;
-    }
-    self.state.custom_spaces.get(&kind)
+  pub fn get_lua_host(&self) -> &LuaHost {
+    &self.lua_host
   }
 
-  pub fn set_custom_space_content(&mut self, kind: ObjectKind, content: String) {
+  pub fn get_local_package_content(&self, kind: ObjectKind) -> Option<&String> {
+    if kind.top_level_package() == ObjectKind::system_package() {
+      return None;
+    }
+    self.state.local_packages.get(&kind)
+  }
+
+  pub fn set_local_package_content(&mut self, kind: ObjectKind, content: String) {
     // TODO: per-user permissions
-    if kind.0.starts_with("system/") {
+    if kind.top_level_package() == ObjectKind::system_package() {
       log::warn!("Ignoring request to set system space");
       return;
     }
-    self.state.custom_spaces.insert(kind, content);
+    self.state.local_packages.insert(kind, content);
     self.reload_code(); // TODO: restrict to just this kind
   }
 

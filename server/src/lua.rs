@@ -8,7 +8,6 @@ use std::path::{Path, PathBuf};
 #[derive(Clone)]
 pub struct LuaHost {
   root: PathBuf,
-  extra_source: Option<String>,
 }
 
 impl LuaHost {
@@ -28,83 +27,52 @@ impl LuaHost {
       lua_ctx
         .globals()
         .set("load", lua_ctx.create_function(LuaHost::load_string)?)?;
-
-      // simplified module loading
-      let root_path = self.root.clone();
-      let package = lua_ctx.create_table()?;
-      package.set("loaded", lua_ctx.create_table()?)?;
-      lua_ctx.globals().set("package", package)?;
-      lua_ctx.globals().set(
-        "require",
-        lua_ctx.create_function(move |lua_ctx, name: String| {
-          let loaded = lua_ctx
-            .globals()
-            .get::<_, rlua::Table>("package")?
-            .get::<_, rlua::Table>("loaded")?;
-          let existing = loaded.get::<_, rlua::Value>(name.clone())?;
-          if let rlua::Value::Nil = existing {
-            match LuaHost::require(root_path.clone(), &name) {
-              Err(io_err) => Err(rlua::Error::external(io_err)),
-              Ok(bytes) => lua_ctx.load(&bytes).set_name(&name)?.eval().and_then(|v: rlua::Value| {
-                let maybe_populated = loaded.get::<_, rlua::Value>(name.clone())?;
-                if let rlua::Value::Nil = maybe_populated {
-                  loaded.set(name.to_string(), v.clone())?;
-                  Ok(v)
-                } else {
-                  Ok(maybe_populated)
-                }
-              }),
-            }
-          } else {
-            Ok(existing)
-          }
-        })?,
-      )?;
-
-      match &self.extra_source {
-        Some(content) => lua_ctx.load(content).exec()?,
-        None => lua_ctx
-          .load(
-            &LuaHost::load_unchecked_path(&self.root.join(Path::new("main.lua")))
-              .map_err(|e| rlua::Error::external(e))?,
-          )
-          .exec()?,
-      };
-
       Ok(())
     })?;
     Ok(lua)
   }
 
-  pub fn with_source(&self, source: &str) -> LuaHost {
-    LuaHost {
-      root: self.root.clone(),
-      extra_source: Some(source.to_string()),
-    }
-  }
-
-  fn load_string(lua_ctx: rlua::Context, source: String) -> rlua::Result<rlua::Function> {
+  pub fn load_string(lua_ctx: rlua::Context, source: String) -> rlua::Result<rlua::Function> {
     lua_ctx.load(&source).into_function()
   }
 
-  // For now, only allow foo.lua in the same folder.
-  // Later we should permit `system.bar` and `user/repo.bar`
-  fn require(root: PathBuf, name: &str) -> std::io::Result<Vec<u8>> {
+  // load a system package (e.g. loads system.main when you pass a name of "main")
+  pub fn load_system_package<'lua>(
+    &self,
+    lua_ctx: rlua::Context<'lua>,
+    name: &str,
+  ) -> rlua::Result<rlua::Value<'lua>> {
+    let content = self
+      .system_package_to_buf(name)
+      .map_err(|e| rlua::Error::external(format!("Loading system package {}: {}", name, e)))?;
+    lua_ctx
+      .load(&content)
+      .set_name(&format!("system package {}", name))?
+      .eval()
+      .map_err(|e| {
+        log::error!("Error loading system package {}: {}", name, e);
+        e
+      })
+  }
+
+  // Supports loading modules out of the top level of the system directory
+  // i.e. allows loading system.main if you pass `system_package_to_buf("main")`
+  fn system_package_to_buf(&self, name: &str) -> std::io::Result<Vec<u8>> {
     let mut filename = name.to_string();
     filename.push_str(".lua");
-    let path = root.join(Path::new(&filename)).canonicalize()?;
-    if !path.starts_with(&root) {
+    let path = self.root.join(Path::new(&filename)).canonicalize()?;
+    if !path.starts_with(&self.root) {
       log::warn!(
         "Trying to require {:?} but outside of root {:?}",
         path,
-        &root
+        &self.root
       );
       Err(std::io::Error::new(
         std::io::ErrorKind::Other,
         "Can't require outside of root",
       ))
     } else {
-      LuaHost::load_unchecked_path(&path)
+      LuaHost::unchecked_path_to_buf(&path)
     }
   }
 
@@ -112,11 +80,10 @@ impl LuaHost {
     let canonical_root = root.to_path_buf().canonicalize()?;
     Ok(LuaHost {
       root: canonical_root.clone(),
-      extra_source: None,
     })
   }
 
-  fn load_unchecked_path(p: &Path) -> std::io::Result<Vec<u8>> {
+  fn unchecked_path_to_buf(p: &Path) -> std::io::Result<Vec<u8>> {
     let mut f = File::open(p)?;
     let mut v: Vec<u8> = vec![];
     f.read_to_end(&mut v)?;

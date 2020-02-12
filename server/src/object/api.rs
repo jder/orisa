@@ -3,6 +3,7 @@ use crate::lua::*;
 use crate::object::actor::ObjectMessage;
 use crate::object::executor::{ExecutionState as S, GlobalWrite};
 use crate::world::{Id, ObjectKind};
+use rlua::ToLua;
 use std::collections::HashMap;
 
 fn get_children(_lua_ctx: rlua::Context, object_id: Id) -> rlua::Result<Vec<Id>> {
@@ -76,8 +77,8 @@ fn get_username(_lua_ctx: rlua::Context, id: Id) -> rlua::Result<Option<String>>
   Ok(S::with_world(|w| w.username(id)))
 }
 
-fn get_kind(_lua_ctx: rlua::Context, id: Id) -> rlua::Result<String> {
-  Ok(S::with_world(|w| w.kind(id).0))
+fn get_kind(lua_ctx: rlua::Context, id: Id) -> rlua::Result<rlua::Value> {
+  S::with_world(|w| w.kind(id).to_lua(lua_ctx))
 }
 
 fn set_state(
@@ -135,22 +136,34 @@ fn get_attr(_lua_ctx: rlua::Context, (id, key): (Id, String)) -> rlua::Result<Se
   Ok(S::with_world(|w| w.get_attr(id, &key)).unwrap_or(SerializableValue::Nil))
 }
 
-fn get_custom_space_content(_lua_ctx: rlua::Context, name: String) -> rlua::Result<Option<String>> {
+fn get_local_package_content(
+  _lua_ctx: rlua::Context,
+  name: String,
+) -> rlua::Result<Option<String>> {
   Ok(S::with_world(|w| {
-    w.get_custom_space_content(ObjectKind::new(&name))
+    w.get_local_package_content(ObjectKind::new(&name))
       .map(|s| s.clone())
   }))
 }
 
-fn send_save_custom_space_content(
+fn send_save_local_package_content(
   _lua_ctx: rlua::Context,
   (name, content): (String, String),
 ) -> rlua::Result<()> {
-  S::add_write(GlobalWrite::SetCustomSpaceContent {
-    kind: ObjectKind(name),
-    content: content,
-  });
-  Ok(())
+  let destination_kind = ObjectKind::new(&name);
+  let id = S::get_id();
+
+  if Some(destination_kind.top_level_package().to_string()) == S::with_world(|w| w.username(id)) {
+    S::add_write(GlobalWrite::SetLocalPackageContent {
+      kind: ObjectKind::new(&name),
+      content: content,
+    });
+    Ok(())
+  } else {
+    Err(rlua::Error::external(
+      "You can only write to local packages named $username.something",
+    ))
+  }
 }
 
 fn send_create_object(
@@ -181,9 +194,22 @@ fn send_move_object(
 
   // TODO: this boilerplate is horrible; surely we can do somethig nicer
   let mut info: HashMap<String, SerializableValue> = HashMap::new();
-  info.insert("child".to_string(), SerializableValue::String(child.to_string()));
-  info.insert("old_parent".to_string(), S::with_world(|w| w.parent(child)).map(|p| SerializableValue::String(p.to_string())).unwrap_or(SerializableValue::Nil));
-  info.insert("new_parent".to_string(), new_parent.map(|p| SerializableValue::String(p.to_string())).unwrap_or(SerializableValue::Nil));
+  info.insert(
+    "child".to_string(),
+    SerializableValue::String(child.to_string()),
+  );
+  info.insert(
+    "old_parent".to_string(),
+    S::with_world(|w| w.parent(child))
+      .map(|p| SerializableValue::String(p.to_string()))
+      .unwrap_or(SerializableValue::Nil),
+  );
+  info.insert(
+    "new_parent".to_string(),
+    new_parent
+      .map(|p| SerializableValue::String(p.to_string()))
+      .unwrap_or(SerializableValue::Nil),
+  );
   let payload = SerializableValue::Dict(info);
 
   S::add_write(GlobalWrite::MoveObject {
@@ -191,7 +217,7 @@ fn send_move_object(
     new_parent: new_parent,
     sender: S::get_id(),
     payload: payload,
-    original_user: S::get_original_user()
+    original_user: S::get_original_user(),
   });
   Ok(())
 }
@@ -236,6 +262,57 @@ fn print_override<'lua>(
   Ok(())
 }
 
+// We load pakcages in 2 flavours:
+// * system.foo, which loads "foo.lua" from the filesystem.
+// * user.foo, which loads the local (in-memory) package named user.foo from the world.
+// In the future, we want to extend this to user/repo.foo
+fn require(lua_ctx: rlua::Context, package_name: String) -> rlua::Result<rlua::Value> {
+  let loaded = lua_ctx
+    .globals()
+    .get::<_, rlua::Table>("package")?
+    .get::<_, rlua::Table>("loaded")?;
+  let existing = loaded.get::<_, rlua::Value>(package_name.clone())?;
+  if let rlua::Value::Nil = existing {
+    // Load the package
+    let package_pieces: Vec<String> = package_name.split(".").map(|s| s.to_string()).collect();
+
+    if package_pieces.len() != 2 {
+      return Err(rlua::Error::external(
+        "Expected package named either system.foo or user.foo",
+      ));
+    }
+
+    let package = if package_pieces.first() == Some(&ObjectKind::system_package().to_string()) {
+      // from the system
+      let rest = package_pieces[1..].join("/");
+      S::with_world(|w| w.get_lua_host().load_system_package(lua_ctx, &rest))
+    } else {
+      // from local packages
+      S::with_world(|w| {
+        let content = w
+          .get_local_package_content(ObjectKind::new(&package_name))
+          .ok_or(rlua::Error::external(format!(
+            "Can't find local package {}",
+            package_name
+          )))?;
+        lua_ctx.load(content).set_name(&package_name)?.eval()
+      })
+    };
+
+    package.and_then(|v: rlua::Value| {
+      let maybe_populated = loaded.get::<_, rlua::Value>(package_name.clone())?;
+      if let rlua::Value::Nil = maybe_populated {
+        loaded.set(package_name.to_string(), v.clone())?;
+        Ok(v)
+      } else {
+        Ok(maybe_populated)
+      }
+    })
+  } else {
+    Ok(existing)
+  }
+}
+
 pub(super) fn register_api(lua_ctx: rlua::Context) -> rlua::Result<()> {
   let globals = lua_ctx.globals();
   let orisa = lua_ctx.create_table()?;
@@ -269,15 +346,23 @@ pub(super) fn register_api(lua_ctx: rlua::Context) -> rlua::Result<()> {
   orisa.set("get_attr", lua_ctx.create_function(get_attr)?)?;
 
   orisa.set(
-    "get_custom_space_content",
-    lua_ctx.create_function(get_custom_space_content)?,
+    "get_local_package_content",
+    lua_ctx.create_function(get_local_package_content)?,
   )?;
   orisa.set(
-    "send_save_custom_space_content",
-    lua_ctx.create_function(send_save_custom_space_content)?,
+    "send_save_local_package_content",
+    lua_ctx.create_function(send_save_local_package_content)?,
   )?;
 
   globals.set("orisa", orisa)?;
+
+  // Package loading mimicing the built-in lua behavior
+  let package = lua_ctx.create_table()?;
+  package.set("loaded", lua_ctx.create_table()?)?;
+  lua_ctx.globals().set("package", package)?;
+  lua_ctx
+    .globals()
+    .set("require", lua_ctx.create_function(require)?)?;
 
   globals.set("print", lua_ctx.create_function(print_override)?)?;
 
