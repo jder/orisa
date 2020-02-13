@@ -32,8 +32,47 @@ impl LuaHost {
     Ok(lua)
   }
 
-  pub fn load_string(lua_ctx: rlua::Context, source: String) -> rlua::Result<rlua::Function> {
-    lua_ctx.load(&source).into_function()
+  pub fn load_string<'lua>(
+    lua_ctx: rlua::Context<'lua>,
+    (source, chunk_name, _mode, env): (
+      rlua::Value<'lua>,
+      Option<String>,
+      Option<String>,
+      Option<rlua::Table<'lua>>,
+    ),
+  ) -> rlua::Result<rlua::Function<'lua>> {
+    let text = match source {
+      rlua::Value::String(s) => s.to_str()?.to_string(),
+      rlua::Value::Function(f) => {
+        let mut t = String::new();
+        loop {
+          let res = f.call::<_, Option<String>>(())?;
+          match res {
+            None => break,
+            Some(s) => t.push_str(&s),
+          }
+        }
+        t
+      }
+      _ => {
+        return Err(rlua::Error::external(format!(
+          "Expected load_string source to be string or function, got {:?}",
+          source
+        )))
+      }
+    };
+
+    let mut chunk = lua_ctx.load(&text);
+
+    if let Some(n) = chunk_name {
+      chunk = chunk.set_name(&n)?;
+    }
+
+    if let Some(e) = env {
+      chunk = chunk.set_environment(e)?;
+    }
+
+    chunk.into_function()
   }
 
   // load a system package (e.g. loads system.main when you pass a name of "main")
