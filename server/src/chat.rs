@@ -148,16 +148,24 @@ pub struct AppState {
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct ChatRowContent {
-  id: String,
-  text: String, // in the future, HTML etc
+#[serde(untagged)]
+pub enum ChatRowContent {
+  TextContent { id: String, text: String },
+  HtmlContent { id: String, html: String },
 }
 
 impl ChatRowContent {
   pub fn new(text: &str) -> ChatRowContent {
-    return ChatRowContent {
+    return ChatRowContent::TextContent {
       id: Uuid::new_v4().to_string(),
       text: text.to_string(),
+    };
+  }
+
+  pub fn new_html(html: &str) -> ChatRowContent {
+    return ChatRowContent::HtmlContent {
+      id: Uuid::new_v4().to_string(),
+      html: html.to_string(),
     };
   }
 }

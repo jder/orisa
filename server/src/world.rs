@@ -48,7 +48,8 @@ impl<'lua> rlua::FromLua<'lua> for Id {
   }
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug, Hash, PartialEq, Eq)]
+#[derive(Clone, Debug, Hash, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(from = "String", into = "String")]
 pub struct ObjectKind {
   components: Vec<String>,
 }
@@ -80,9 +81,27 @@ impl ObjectKind {
   }
 }
 
+impl std::fmt::Display for ObjectKind {
+  fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    f.write_str(&self.components.join("."))
+  }
+}
+
+impl From<String> for ObjectKind {
+  fn from(s: String) -> ObjectKind {
+    return ObjectKind::new(&s);
+  }
+}
+
+impl Into<String> for ObjectKind {
+  fn into(self) -> String {
+    return self.to_string();
+  }
+}
+
 impl<'lua> rlua::ToLua<'lua> for ObjectKind {
   fn to_lua(self, lua_ctx: rlua::Context<'lua>) -> rlua::Result<rlua::Value> {
-    self.components.join(".").to_lua(lua_ctx)
+    self.to_string().to_lua(lua_ctx)
   }
 }
 

@@ -64,13 +64,4 @@ export function isEditFileMessage(m: ToClientMessage): m is EditFileMessage {
   return m.type == "EditFile";
 }
 
-// A row to display. Someday could include HTML, actions, styling, etc.
-export class ChatRowContent {
-  id: string;
-  text: string;
-
-  constructor(id: string, text: string) {
-    this.id = id;
-    this.text = text;
-  }
-}
+export type ChatRowContent = {id: string, text: string} | {id: string, html: string};

@@ -47,6 +47,17 @@ fn send_user_tell(_lua_ctx: rlua::Context, message: String) -> rlua::Result<()> 
   Ok(())
 }
 
+fn send_user_tell_html(_lua_ctx: rlua::Context, html: String) -> rlua::Result<()> {
+  // TODO: we could optimize this by sending directly if no other writes have happened yet
+  S::add_write(GlobalWrite::SendClientMessage {
+    target: S::get_id(),
+    message: ToClientMessage::Tell {
+      content: ChatRowContent::new_html(&html),
+    },
+  });
+  Ok(())
+}
+
 fn send_user_backlog(_lua_ctx: rlua::Context, messages: Vec<String>) -> rlua::Result<()> {
   // TODO: we could optimize this by sending directly if no other writes have happened yet
   S::add_write(GlobalWrite::SendClientMessage {
@@ -318,6 +329,10 @@ pub(super) fn register_api(lua_ctx: rlua::Context) -> rlua::Result<()> {
 
   orisa.set("send", lua_ctx.create_function(send)?)?;
   orisa.set("send_user_tell", lua_ctx.create_function(send_user_tell)?)?;
+  orisa.set(
+    "send_user_tell_html",
+    lua_ctx.create_function(send_user_tell_html)?,
+  )?;
   orisa.set(
     "send_user_backlog",
     lua_ctx.create_function(send_user_backlog)?,
