@@ -13,9 +13,17 @@
 }
 
 .ChatHistoryRow {
-  white-space: pre-wrap;
   font-family: "Lucida Console", Monaco, monospace;
   font-size: 10pt;
+}
+
+.ChatHistoryRow.text {
+  white-space: pre-wrap;
+}
+
+.echo {
+  color: grey;
+  font-style: italic;
 }
 
 .mainInput {

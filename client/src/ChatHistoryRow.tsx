@@ -7,13 +7,13 @@ const ChatHistoryRow = (props: { content: ChatRowContent }) => {
 
   if ('text' in props.content) {
     return (
-      <div className="ChatHistoryRow">
+      <div className="ChatHistoryRow text">
         {props.content.text}
       </div>
     );
   } else {
     return (
-      <div className="ChatHistoryRow" dangerouslySetInnerHTML={{__html: dompurify.sanitize(props.content.html) }} />
+      <div className="ChatHistoryRow html" dangerouslySetInnerHTML={{__html: dompurify.sanitize(props.content.html) }} />
     )
   }
 
