@@ -23,7 +23,8 @@ impl Actor for ChatSocket {
 
   fn stopped(&mut self, ctx: &mut Self::Context) {
     if let Some(id) = self.self_id {
-      self.app_data.world_ref.write(|world| {
+      // we use try_write here because the world could be gone if we're tearing down
+      self.app_data.world_ref.try_write(|world| {
         world.remove_chat_connection(id, ctx.address());
         world.send_message(
           self.id(),

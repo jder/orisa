@@ -58,7 +58,7 @@ fn save_world(world_ref: WorldRef) -> ResultAnyError<()> {
   let state_dir = Path::new(&state_dir_env);
   let temp_path = state_dir.join("world-out.json");
   let file = File::create(&temp_path)?;
-  World::freeze(world_ref, file).unwrap();
+  World::freeze(world_ref, file)?;
 
   let final_path = state_dir.join("world.json");
   let _ = copy(final_path.clone(), state_dir.join("world.bak.json")); // ignore result
@@ -108,7 +108,8 @@ async fn run_server() -> Result<(), std::io::Error> {
   let srv = running.clone();
   ctrlc::set_handler(move || {
     info!("Asking for stop!");
-    save_world(world_ref.clone()).unwrap();
+    let _ =
+      save_world(world_ref.clone()).map_err(|err| log::error!("Failed to save world: {}", err));
     executor::block_on(srv.stop(true));
   })
   .expect("Error setting Ctrl-C handler");

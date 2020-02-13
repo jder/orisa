@@ -145,26 +145,40 @@ pub struct WorldRef {
 }
 
 impl WorldRef {
-  pub fn read<F, T>(&self, f: F) -> T
+  pub fn try_read<F, T>(&self, f: F) -> Option<T>
   where
     F: FnOnce(&World) -> T,
   {
     // This is horribly gross which is why we do it here, once.
-    let arc = self.world.upgrade().unwrap();
+    let arc = self.world.upgrade()?;
     let guard = arc.read().unwrap();
-    let w = guard.as_ref();
-    f(&w.unwrap())
+    let w = guard.as_ref()?;
+    Some(f(&w))
+  }
+
+  pub fn try_write<F, T>(&self, f: F) -> Option<T>
+  where
+    F: FnOnce(&mut World) -> T,
+  {
+    // This is horribly gross which is why we do it here, once.
+    let arc = self.world.upgrade()?;
+    let mut guard = arc.write().unwrap();
+    let mut w = guard.as_mut()?;
+    Some(f(&mut w))
+  }
+
+  pub fn read<F, T>(&self, f: F) -> T
+  where
+    F: FnOnce(&World) -> T,
+  {
+    self.try_read(f).unwrap()
   }
 
   pub fn write<F, T>(&self, f: F) -> T
   where
     F: FnOnce(&mut World) -> T,
   {
-    // This is horribly gross which is why we do it here, once.
-    let arc = self.world.upgrade().unwrap();
-    let mut guard = arc.write().unwrap();
-    let w = guard.as_mut();
-    f(&mut w.unwrap())
+    self.try_write(f).unwrap()
   }
 }
 
