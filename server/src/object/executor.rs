@@ -6,6 +6,7 @@ use crate::world::{Id, ObjectKind, World, WorldRef};
 use rlua;
 use std::cell::RefCell;
 use std::collections::HashMap;
+use std::ops::DerefMut;
 
 pub struct ObjectExecutor {
   generation: i64,
@@ -51,37 +52,33 @@ impl ObjectExecutor {
       changed_attrs: RefCell::new(HashMap::new()),
     };
 
-    // we hold a read lock on the world as a simple form of "transaction isolation" for now
-    // this is not useful right now but prevents us from accidentally writing to the world
-    // which could produce globally-visible effects while other objects are running.
-    let result = wf.read(|_w| {
+    let mut executor = wf.write(|_w| {
       let kind = _w.kind(id);
-
-      _w.with_executor(kind.clone(), |executor| {
-        // This is a gross hack but is safe since the scoped thread local ensures
-        // this value only exists as long as this block.
-        EXECUTION_STATE.set(unsafe { make_static(&state) }, || {
-          let (state, loaded_main) = (&executor.lua_state, &mut executor.loaded_main);
-
-          match state {
-            Ok(lua_state) => lua_state.context(|lua_ctx| {
-              if !*loaded_main {
-                // we try loading first so we we re-try on failures to produce the error again
-                _w.get_lua_host().load_system_package(lua_ctx, "main")?;
-                *loaded_main = true;
-              }
-              body(lua_ctx)
-            }),
-            Err(e) => {
-              log::error!("Lua state failed loading with {:?}; returning failure.", e);
-              Err(e.clone())
-            }
-          }
-        })
-      })
+      _w.get_executor(kind)
     });
 
-    let wf = wf.clone();
+    // This is a gross hack but is safe since the scoped thread local ensures
+    // this value only exists as long as this block.
+    let result = EXECUTION_STATE.set(unsafe { make_static(&state) }, || {
+      let exec = executor.deref_mut();
+      let (state, loaded_main) = (&exec.lua_state, &mut exec.loaded_main);
+
+      match state {
+        Ok(lua_state) => lua_state.context(|lua_ctx| {
+          if !*loaded_main {
+            // we try loading first so we we re-try on failures to produce the error again
+            wf.read(|w| w.get_lua_host().load_system_package(lua_ctx, "main"))?;
+            *loaded_main = true;
+          }
+          body(lua_ctx)
+        }),
+        Err(e) => {
+          log::error!("Lua state failed loading with {:?}; returning failure.", e);
+          Err(e.clone())
+        }
+      }
+    });
+
     wf.write(|w| {
       for write in state.writes.borrow().iter() {
         write.commit(w)
@@ -115,9 +112,9 @@ pub enum GlobalWrite {
     target: Id,
     message: ToClientMessage,
   },
-  CreateObject {
+  InitializeObject {
+    id: Id,
     parent: Option<Id>,
-    kind: ObjectKind,
     init_message: ObjectMessage,
   },
   MoveObject {
@@ -140,13 +137,14 @@ impl GlobalWrite {
       GlobalWrite::SendClientMessage { target, message } => {
         world.send_client_message(*target, message.clone())
       }
-      GlobalWrite::CreateObject {
+      GlobalWrite::InitializeObject {
+        id,
         parent,
-        kind,
         init_message,
       } => {
-        let id = world.create_in(*parent, kind.clone());
-        world.send_message(id, init_message.clone())
+        world.finish_create_object(*id);
+        world.move_object(*id, *parent);
+        world.send_message(*id, init_message.clone())
       }
       GlobalWrite::MoveObject {
         child,
@@ -222,6 +220,13 @@ impl<'a> ExecutionState<'a> {
     F: FnOnce(&World) -> T,
   {
     Self::with_state(|s| s.world.read(|w| body(w)))
+  }
+
+  pub(super) fn with_world_write<T, F>(body: F) -> T
+  where
+    F: FnOnce(&mut World) -> T,
+  {
+    Self::with_state(|s| s.world.write(|w| body(w)))
   }
 
   pub(super) fn get_id() -> Id {

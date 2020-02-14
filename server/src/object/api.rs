@@ -177,13 +177,20 @@ fn send_save_local_package_content(
   }
 }
 
-fn send_create_object(
+// This is a bit of a special case.
+// We allow creation of an object immediately even though this has side effects
+// visible in the rest of the world. Practically, though, since we create it
+// with no parent, it will not meaningfully change anyone else that is running,
+// so long as they do not assume consecutive object ids.
+fn create_object(
   _lua_ctx: rlua::Context,
   (parent, kind, created_payload): (Option<Id>, ObjectKind, SerializableValue),
-) -> rlua::Result<()> {
-  S::add_write(GlobalWrite::CreateObject {
+) -> rlua::Result<Id> {
+  let id = S::with_world_write(|w| w.start_create_object(None, kind));
+
+  S::add_write(GlobalWrite::InitializeObject {
+    id: id,
     parent: parent,
-    kind: kind,
     init_message: ObjectMessage {
       original_user: S::get_original_user(),
       immediate_sender: S::get_id(),
@@ -192,7 +199,7 @@ fn send_create_object(
     },
   });
 
-  Ok(())
+  Ok(id)
 }
 
 fn send_move_object(
@@ -342,10 +349,6 @@ pub(super) fn register_api(lua_ctx: rlua::Context) -> rlua::Result<()> {
     lua_ctx.create_function(send_user_edit_file)?,
   )?;
   orisa.set(
-    "send_create_object",
-    lua_ctx.create_function(send_create_object)?,
-  )?;
-  orisa.set(
     "send_move_object",
     lua_ctx.create_function(send_move_object)?,
   )?;
@@ -367,6 +370,8 @@ pub(super) fn register_api(lua_ctx: rlua::Context) -> rlua::Result<()> {
     "send_save_local_package_content",
     lua_ctx.create_function(send_save_local_package_content)?,
   )?;
+
+  orisa.set("create_object", lua_ctx.create_function(create_object)?)?;
 
   globals.set("orisa", orisa)?;
 

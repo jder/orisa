@@ -13,6 +13,7 @@ use serde_json;
 use std::collections::HashMap;
 use std::fmt;
 use std::io::{Read, Write};
+use std::ops::{Deref, DerefMut};
 use std::sync::{Arc, Mutex, RwLock, Weak};
 
 #[derive(Debug, PartialEq, Clone, Copy, Hash, Eq, Deserialize, Serialize)]
@@ -124,6 +125,7 @@ struct Object {
   id: Id,
   parent_id: Option<Id>,
   kind: ObjectKind,
+  initialized: bool,
 }
 
 pub struct World {
@@ -203,21 +205,37 @@ impl WorldRef {
 
 impl World {
   pub fn create_in(&mut self, parent: Option<Id>, kind: ObjectKind) -> Id {
-    let id = Id(self.state.objects.len());
+    let id = self.start_create_object(parent, kind);
+    self.finish_create_object(id);
+    id
+  }
 
-    let world_ref = self.own_ref.clone();
-    let addr = ObjectActor::start_in_arbiter(&self.arbiter, move |_ctx| {
-      ObjectActor::new(id, world_ref, None)
-    });
+  // Allow two-phase init of objects so we can allocate ids sync.
+  // You must call finish_create_object before sending any messages to this object.
+  pub fn start_create_object(&mut self, parent: Option<Id>, kind: ObjectKind) -> Id {
+    let id = Id(self.state.objects.len());
 
     let o = Object {
       id: id,
       parent_id: parent,
       kind: kind,
+      initialized: false,
     };
-    self.actors.insert(id, addr);
     self.state.objects.push(o);
     id
+  }
+
+  // complete initialization of this object and spawn the associated actor
+  pub fn finish_create_object(&mut self, id: Id) {
+    let mut o = self.get_mut(id);
+    assert!(o.initialized == false);
+    o.initialized = true;
+
+    let world_ref = self.own_ref.clone();
+    let addr = ObjectActor::start_in_arbiter(&self.arbiter, move |_ctx| {
+      ObjectActor::new(id, world_ref, None)
+    });
+    self.actors.insert(id, addr);
   }
 
   pub fn register_chat_connect(&mut self, id: Id, connection: Addr<ChatSocket>) {
@@ -359,23 +377,19 @@ impl World {
     (arc, world_ref)
   }
 
-  pub fn with_executor<T, F>(&self, kind: ObjectKind, body: F) -> T
-  where
-    F: FnOnce(&mut ObjectExecutor) -> T,
-  {
-    // TODO: this could be per space/user instead of kind
-    let mut executor = {
-      let mut caches = self.executor_caches.lock().unwrap();
-      let cache = caches.entry(kind.clone()).or_insert(ExecutorCache::new());
-      cache.checkout_executor(&self.lua_host)
-    };
+  pub fn get_executor(&mut self, kind: ObjectKind) -> ObjectExecutorGuard {
+    let mut caches = self.executor_caches.lock().unwrap();
+    let cache = caches.entry(kind.clone()).or_insert(ExecutorCache::new());
+    ObjectExecutorGuard {
+      executor: Some(cache.checkout_executor(&self.lua_host)),
+      kind: kind,
+      world_ref: self.own_ref.clone(),
+    }
+  }
 
-    let result = body(&mut executor);
-
+  pub fn check_in_executor(&mut self, kind: ObjectKind, executor: ObjectExecutor) {
     let mut caches = self.executor_caches.lock().unwrap();
     caches.get_mut(&kind).map(|c| c.checkin_executor(executor));
-
-    result
   }
 
   pub fn get_lua_host(&self) -> &LuaHost {
@@ -482,6 +496,33 @@ impl World {
     );
     self.frozen = false;
     self.create_defaults();
+  }
+}
+
+pub struct ObjectExecutorGuard {
+  executor: Option<ObjectExecutor>,
+  world_ref: WorldRef,
+  kind: ObjectKind,
+}
+
+impl Deref for ObjectExecutorGuard {
+  type Target = ObjectExecutor;
+
+  fn deref(&self) -> &ObjectExecutor {
+    self.executor.as_ref().unwrap()
+  }
+}
+
+impl DerefMut for ObjectExecutorGuard {
+  fn deref_mut(&mut self) -> &mut ObjectExecutor {
+    self.executor.as_mut().unwrap()
+  }
+}
+
+impl Drop for ObjectExecutorGuard {
+  fn drop(&mut self) {
+    let wf = self.world_ref.clone();
+    wf.write(|_w| _w.check_in_executor(self.kind.clone(), self.executor.take().unwrap()));
   }
 }
 
