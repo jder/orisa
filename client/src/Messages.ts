@@ -49,19 +49,19 @@ export type LogMessage = {type: string, message: string, level: string};
 export type EditFileMessage = {type: string, name: string, content: string};
 
 export function isTellMessage(m: ToClientMessage): m is TellMessage {
-  return m.type == "Tell";
+  return m.type === "Tell";
 }
 
 export function isBacklogMessage(m: ToClientMessage): m is BacklogMessage {
-  return m.type == "Backlog";
+  return m.type === "Backlog";
 }
 
 export function isLogMessage(m: ToClientMessage): m is LogMessage {
-  return m.type == "Log";
+  return m.type === "Log";
 }
 
 export function isEditFileMessage(m: ToClientMessage): m is EditFileMessage {
-  return m.type == "EditFile";
+  return m.type === "EditFile";
 }
 
 export type ChatRowContent = {id: string, text: string} | {id: string, html: string};
