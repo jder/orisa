@@ -30,23 +30,17 @@ impl ObjectActor {
   }
 
   fn run_main(&mut self, msg: &ObjectMessage) -> rlua::Result<()> {
-    let wf = self.world.clone();
     let id = self.id;
 
     ObjectExecutor::run_for_object(self.world.clone(), id, &msg, &mut self.state, |lua_ctx| {
       let globals = lua_ctx.globals();
       let orisa: rlua::Table = globals.get("orisa")?;
       orisa.set("self", id)?;
+      orisa.set("sender", msg.immediate_sender)?;
       orisa.set("original_user", msg.original_user)?;
       let main: rlua::Function = globals.get("main")?;
 
-      let kind = wf.read(|w| w.kind(id));
-      main.call::<_, ()>((
-        kind,
-        msg.immediate_sender,
-        msg.name.clone(),
-        msg.payload.clone(),
-      ))
+      main.call::<_, ()>((msg.name.clone(), msg.payload.clone()))
     })
   }
 

@@ -16,11 +16,11 @@ export class LoginMessage extends ToServerMessage {
   }
 }
 
-export class DoMessage extends ToServerMessage {
+export class CommandMessage extends ToServerMessage {
   text: string;
 
   constructor(text: string) {
-    super("Do")
+    super("Command")
     this.text = text;
   }
 }

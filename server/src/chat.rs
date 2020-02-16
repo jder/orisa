@@ -58,13 +58,13 @@ impl ChatSocket {
     log::info!("Got message {:?}", message);
     match message {
       ToServerMessage::Login { username } => self.handle_login(&username, ctx),
-      ToServerMessage::Do { text } => {
+      ToServerMessage::Command { text } => {
         let mut payload = HashMap::new();
         payload.insert(
           "message".to_string(),
           SerializableValue::String(text.to_string()),
         );
-        self.handle_user_command("do", SerializableValue::Dict(payload))
+        self.handle_user_command("command", SerializableValue::Dict(payload))
       }
       ToServerMessage::ReloadCode {} => self.handle_reload(ctx),
       ToServerMessage::SaveFile { name, content } => {
@@ -192,7 +192,7 @@ impl Message for ToClientMessage {
 #[serde(tag = "type")]
 enum ToServerMessage {
   Login { username: String },
-  Do { text: String },
+  Command { text: String },
   ReloadCode {},
   SaveFile { name: String, content: String },
 }

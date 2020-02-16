@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import ChatHistory from './ChatHistory';
-import { ToClientMessage, isTellMessage, isBacklogMessage, ChatRowContent, DoMessage, ReloadCodeMessage, isLogMessage, SaveFileMessage, isEditFileMessage } from './Messages';
+import { ToClientMessage, isTellMessage, isBacklogMessage, ChatRowContent, CommandMessage, ReloadCodeMessage, isLogMessage, SaveFileMessage, isEditFileMessage } from './Messages';
 import { ChatSocket } from './ChatSocket';
 import Editor, { EditFile } from './Editor'; 
 
@@ -43,7 +43,7 @@ const InteractionPane = (props: {username: string}) => {
   const handleSubmit = (event: React.FormEvent) => {
     event.preventDefault();
 
-    socket!.send(new DoMessage(text));
+    socket!.send(new CommandMessage(text));
     setLastText(text);
     setText("");
   }
