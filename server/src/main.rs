@@ -16,7 +16,7 @@ use listenfd::ListenFd;
 use log::info;
 use std::env;
 use std::fs::{copy, rename, File};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 #[macro_use]
 extern crate scoped_tls;
@@ -47,11 +47,14 @@ fn main() -> Result<(), std::io::Error> {
   res
 }
 
-fn load_world(world: &mut World) -> ResultAnyError<()> {
+fn world_load_path() -> PathBuf {
   let state_dir_env = env::var("ORISA_STATE_DIRECTORY").unwrap_or("state".to_string());
   let state_dir = Path::new(&state_dir_env);
-  let path = state_dir.join("world.json");
-  let file = File::open(&path)?;
+  state_dir.join("world.json").to_path_buf()
+}
+
+fn load_world(world: &mut World, path: &Path) -> ResultAnyError<()> {
+  let file = File::open(path)?;
   world.unfreeze_read(file)?;
   Ok(())
 }
@@ -77,7 +80,10 @@ async fn run_server() -> Result<(), std::io::Error> {
   let (_world, world_ref) = World::new(arbiter.clone(), &Path::new(&code_dir_env));
 
   world_ref.write(|w| {
-    if load_world(w).is_err() {
+    let path = world_load_path();
+    if path.exists() {
+      load_world(w, &path).expect("Error loading world")
+    } else {
       w.unfreeze_empty(); // start from scratch
     }
   });
