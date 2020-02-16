@@ -21,6 +21,9 @@ use std::path::Path;
 #[macro_use]
 extern crate scoped_tls;
 
+#[macro_use]
+extern crate lazy_static;
+
 async fn index() -> impl Responder {
   HttpResponse::Ok().body("Hello world!")
 }

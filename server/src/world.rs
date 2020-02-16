@@ -118,7 +118,7 @@ impl World {
       *id
     } else {
       let entrance = self.entrance();
-      let id = self.create_in(Some(entrance), ObjectKind::user(username));
+      let id = self.create_in(Some(entrance), ObjectKind::for_user(username));
       self.state.users.insert(username.to_string(), id);
       id
     }
@@ -194,7 +194,7 @@ impl World {
   }
 
   fn create_defaults(&mut self) {
-    let entrance = self.create_in(None, ObjectKind::room());
+    let entrance = self.create_in(None, ObjectKind::for_room());
     self.state.entrance_id = Some(entrance)
   }
 
@@ -250,7 +250,7 @@ impl World {
   }
 
   pub fn get_local_package_content(&self, kind: ObjectKind) -> Option<&String> {
-    if kind.top_level_package() == ObjectKind::system_package() {
+    if kind.package_root() == ObjectKind::system_package_root() {
       return None;
     }
     self.state.local_packages.get(&kind)
@@ -258,7 +258,7 @@ impl World {
 
   pub fn set_local_package_content(&mut self, kind: ObjectKind, content: String) {
     // TODO: per-user permissions
-    if kind.top_level_package() == ObjectKind::system_package() {
+    if kind.package_root() == ObjectKind::system_package_root() {
       log::warn!("Ignoring request to set system space");
       return;
     }

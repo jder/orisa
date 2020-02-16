@@ -1,3 +1,7 @@
+use crate::util::*;
+use core::convert::TryFrom;
+use regex::Regex;
+use rlua::ExternalResult;
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
@@ -41,46 +45,73 @@ impl Id {
 }
 
 #[derive(Clone, Debug, Hash, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(from = "String", into = "String")]
+#[serde(try_from = "String", into = "String")]
+/// Represents the kind of an object, which is also what code runs to handle its messages.
+/// e.g. system.foo -> user of system, default repo, package foo
+/// e.g. jder/live.foo.bar -> user of jder, repo live, package foo.bar
+///
+/// The first two components (everything up to the first dot) are known as the package root
+/// and usually corresponds to a directory on disk that lua code lives in.
 pub struct ObjectKind {
-  components: Vec<String>,
+  user: String,
+  repo: Option<String>,
+  package: String,
 }
 
 impl ObjectKind {
-  pub fn new(name: &str) -> ObjectKind {
-    let result = ObjectKind {
-      components: name.split(".").map(|s| s.to_string()).collect(),
-    };
-    // TODO: nicer error handling
-    assert!(result.components.len() == 2);
+  pub fn new(name: &str) -> ResultAnyError<ObjectKind> {
+    lazy_static! {
+      // TODO: For now we only support a single package component (i.e. system.foo, not system.foo.bar)
+      static ref RE: Regex = Regex::new(r"^(?P<user>[[:word:]]+)(/(?P<repo>[[:word:]]+))?\.(?P<package>[[:word:]]+)$").unwrap();
+    }
+
+    RE.captures(name)
+      .map(|caps| ObjectKind {
+        user: caps.name("user").unwrap().as_str().to_string(),
+        repo: caps.name("repo").map(|s| s.as_str().to_string()),
+        package: caps.name("package").unwrap().as_str().to_string(),
+      })
+      .ok_or_else(|| "invalid object kind".into())
+  }
+
+  pub fn user(&self) -> &str {
+    return &self.user;
+  }
+
+  pub fn for_user(username: &str) -> ObjectKind {
+    ObjectKind::new(&format!("{}.user", username)).unwrap()
+  }
+
+  pub fn for_room() -> ObjectKind {
+    ObjectKind::new("system.room").unwrap()
+  }
+
+  pub fn package_root(&self) -> String {
+    let mut result = self.user.clone();
+    if let Some(ref r) = self.repo {
+      result.push('/');
+      result.push_str(&r);
+    }
     result
   }
 
-  pub fn user(username: &str) -> ObjectKind {
-    ObjectKind::new(&format!("{}.user", username))
-  }
-
-  pub fn room() -> ObjectKind {
-    ObjectKind::new("system.room")
-  }
-
-  pub fn top_level_package(&self) -> &str {
-    &self.components.first().unwrap()
-  }
-
-  pub fn system_package() -> &'static str {
+  pub fn system_package_root() -> &'static str {
     return "system";
   }
 }
 
 impl std::fmt::Display for ObjectKind {
   fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-    f.write_str(&self.components.join("."))
+    match self.repo {
+      None => write!(f, "{}.{}", self.user, self.package),
+      Some(ref repo) => write!(f, "{}/{}.{}", self.user, repo, self.package),
+    }
   }
 }
 
-impl From<String> for ObjectKind {
-  fn from(s: String) -> ObjectKind {
+impl TryFrom<String> for ObjectKind {
+  type Error = AnyError;
+  fn try_from(s: String) -> ResultAnyError<ObjectKind> {
     return ObjectKind::new(&s);
   }
 }
@@ -102,7 +133,7 @@ impl<'lua> rlua::FromLua<'lua> for ObjectKind {
     // TODO: more validation
     if let rlua::Value::String(s) = value {
       let string = s.to_str()?;
-      Ok(ObjectKind::new(string))
+      Ok(ObjectKind::new(string).to_lua_err()?)
     } else {
       Err(rlua::Error::external(
         "Expected a string for an object kind",

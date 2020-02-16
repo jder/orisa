@@ -76,13 +76,13 @@ impl LuaHost {
   }
 
   // load a system package (e.g. loads system.main when you pass a name of "main")
-  pub fn load_system_package<'lua>(
+  pub fn load_system_package_root<'lua>(
     &self,
     lua_ctx: rlua::Context<'lua>,
     name: &str,
   ) -> rlua::Result<rlua::Value<'lua>> {
     let content = self
-      .system_package_to_buf(name)
+      .system_package_root_to_buf(name)
       .map_err(|e| rlua::Error::external(format!("Loading system package {}: {}", name, e)))?;
     lua_ctx
       .load(&content)
@@ -95,8 +95,8 @@ impl LuaHost {
   }
 
   // Supports loading modules out of the top level of the system directory
-  // i.e. allows loading system.main if you pass `system_package_to_buf("main")`
-  fn system_package_to_buf(&self, name: &str) -> std::io::Result<Vec<u8>> {
+  // i.e. allows loading system.main if you pass `system_package_root_to_buf("main")`
+  fn system_package_root_to_buf(&self, name: &str) -> std::io::Result<Vec<u8>> {
     let mut filename = name.to_string();
     filename.push_str(".lua");
     let path = self.root.join(Path::new(&filename)).canonicalize()?;

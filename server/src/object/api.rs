@@ -3,6 +3,8 @@ use crate::lua::*;
 use crate::object::actor::ObjectMessage;
 use crate::object::executor::{ExecutionState as S, GlobalWrite};
 use crate::world::{Id, ObjectKind};
+use rlua;
+use rlua::ExternalResult;
 use rlua::ToLua;
 use std::collections::HashMap;
 
@@ -151,22 +153,22 @@ fn get_local_package_content(
   _lua_ctx: rlua::Context,
   name: String,
 ) -> rlua::Result<Option<String>> {
-  Ok(S::with_world(|w| {
-    w.get_local_package_content(ObjectKind::new(&name))
-      .map(|s| s.clone())
-  }))
+  S::with_world(|w| {
+    ObjectKind::new(&name).map(|kind| w.get_local_package_content(kind).map(|s| s.clone()))
+  })
+  .map_err(|e| rlua::Error::external(e))
 }
 
 fn send_save_local_package_content(
   _lua_ctx: rlua::Context,
   (name, content): (String, String),
 ) -> rlua::Result<()> {
-  let destination_kind = ObjectKind::new(&name);
+  let destination_kind = ObjectKind::new(&name).to_lua_err()?;
   let id = S::get_id();
 
-  if Some(destination_kind.top_level_package().to_string()) == S::with_world(|w| w.username(id)) {
+  if Some(destination_kind.user().to_string()) == S::with_world(|w| w.username(id)) {
     S::add_write(GlobalWrite::SetLocalPackageContent {
-      kind: ObjectKind::new(&name),
+      kind: ObjectKind::new(&name).to_lua_err()?,
       content: content,
     });
     Ok(())
@@ -299,15 +301,16 @@ fn require(lua_ctx: rlua::Context, package_name: String) -> rlua::Result<rlua::V
       ));
     }
 
-    let package = if package_pieces.first() == Some(&ObjectKind::system_package().to_string()) {
+    let package = if package_pieces.first() == Some(&ObjectKind::system_package_root().to_string())
+    {
       // from the system
       let rest = package_pieces[1..].join("/");
-      S::with_world(|w| w.get_lua_host().load_system_package(lua_ctx, &rest))
+      S::with_world(|w| w.get_lua_host().load_system_package_root(lua_ctx, &rest))
     } else {
       // from local packages
       S::with_world(|w| {
         let content = w
-          .get_local_package_content(ObjectKind::new(&package_name))
+          .get_local_package_content(ObjectKind::new(&package_name).to_lua_err()?)
           .ok_or(rlua::Error::external(format!(
             "Can't find local package {}",
             package_name

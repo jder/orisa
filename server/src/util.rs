@@ -1,7 +1,8 @@
 use std::error;
 use std::sync::{Arc, RwLock, Weak};
 
-pub type ResultAnyError<T> = Result<T, Box<dyn error::Error>>;
+pub type AnyError = Box<dyn error::Error + Send + Sync>;
+pub type ResultAnyError<T> = Result<T, AnyError>;
 
 /// Weak reference to a read/write-locked value
 pub struct WeakRw<T> {

@@ -67,7 +67,7 @@ impl ObjectExecutor {
         Ok(lua_state) => lua_state.context(|lua_ctx| {
           if !*loaded_main {
             // we try loading first so we we re-try on failures to produce the error again
-            wf.read(|w| w.get_lua_host().load_system_package(lua_ctx, "main"))?;
+            wf.read(|w| w.get_lua_host().load_system_package_root(lua_ctx, "main"))?;
             *loaded_main = true;
           }
           body(lua_ctx)
