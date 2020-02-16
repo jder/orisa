@@ -1,4 +1,5 @@
 use crate::chat::{ChatSocket, ToClientMessage};
+use crate::lua::PackageReference;
 use crate::lua::{LuaHost, SerializableValue};
 use crate::object::actor::*;
 use crate::object::executor::{ExecutorCache, ObjectExecutor};
@@ -31,7 +32,7 @@ pub struct World {
   own_ref: WorldRef,
 
   lua_host: LuaHost,
-  executor_caches: Mutex<HashMap<ObjectKind, ExecutorCache>>,
+  executor_caches: Mutex<HashMap<PackageReference, ExecutorCache>>,
 
   chat_connections: MultiMap<Id, Addr<ChatSocket>>,
 
@@ -45,7 +46,7 @@ pub struct WorldState {
   objects: Vec<Object>,
   entrance_id: Option<Id>, // only None during initialization
   users: HashMap<String, Id>,
-  local_packages: HashMap<ObjectKind, String>, // string is lua code
+  live_packages: HashMap<PackageReference, String>, // string is lua code
   object_attrs: HashMap<Id, HashMap<String, SerializableValue>>,
 }
 
@@ -211,7 +212,7 @@ impl World {
         objects: vec![],
         entrance_id: None,
         users: HashMap::new(),
-        local_packages: HashMap::new(),
+        live_packages: HashMap::new(),
         object_attrs: HashMap::new(),
       },
       arbiter: arbiter,
@@ -230,17 +231,17 @@ impl World {
     (arc, world_ref)
   }
 
-  pub fn get_executor(&mut self, kind: ObjectKind) -> ObjectExecutorGuard {
+  pub fn get_executor(&mut self, kind: PackageReference) -> ObjectExecutorGuard {
     let mut caches = self.executor_caches.lock().unwrap();
     let cache = caches.entry(kind.clone()).or_insert(ExecutorCache::new());
     ObjectExecutorGuard {
       executor: Some(cache.checkout_executor(&self.lua_host)),
-      kind: kind,
+      package: kind,
       world_ref: self.own_ref.clone(),
     }
   }
 
-  pub fn check_in_executor(&mut self, kind: ObjectKind, executor: ObjectExecutor) {
+  pub fn check_in_executor(&mut self, kind: PackageReference, executor: ObjectExecutor) {
     let mut caches = self.executor_caches.lock().unwrap();
     caches.get_mut(&kind).map(|c| c.checkin_executor(executor));
   }
@@ -249,20 +250,20 @@ impl World {
     &self.lua_host
   }
 
-  pub fn get_local_package_content(&self, kind: ObjectKind) -> Option<&String> {
-    if kind.package_root() == ObjectKind::system_package_root() {
+  pub fn get_live_package_content(&self, package: PackageReference) -> Option<&String> {
+    if !package.is_live_package() {
       return None;
     }
-    self.state.local_packages.get(&kind)
+    self.state.live_packages.get(&package)
   }
 
-  pub fn set_local_package_content(&mut self, kind: ObjectKind, content: String) {
+  pub fn set_live_package_content(&mut self, package: PackageReference, content: String) {
     // TODO: per-user permissions
-    if kind.package_root() == ObjectKind::system_package_root() {
-      log::warn!("Ignoring request to set system space");
+    if !package.is_live_package() {
+      log::warn!("Ignoring request to set non-live package");
       return;
     }
-    self.state.local_packages.insert(kind, content);
+    self.state.live_packages.insert(package, content);
     self.reload_code(); // TODO: restrict to just this kind
   }
 
@@ -355,7 +356,7 @@ impl World {
 pub struct ObjectExecutorGuard {
   executor: Option<ObjectExecutor>,
   world_ref: WorldRef,
-  kind: ObjectKind,
+  package: PackageReference,
 }
 
 impl Deref for ObjectExecutorGuard {
@@ -375,7 +376,7 @@ impl DerefMut for ObjectExecutorGuard {
 impl Drop for ObjectExecutorGuard {
   fn drop(&mut self) {
     let wf = self.world_ref.clone();
-    wf.write(|_w| _w.check_in_executor(self.kind.clone(), self.executor.take().unwrap()));
+    wf.write(|_w| _w.check_in_executor(self.package.clone(), self.executor.take().unwrap()));
   }
 }
 

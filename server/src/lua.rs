@@ -1,6 +1,11 @@
+use crate::util::*;
+use core::convert::TryFrom;
+use regex::Regex;
 use rlua;
+use rlua::ExternalResult;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::fmt;
 use std::fs::File;
 use std::io::Read;
 use std::path::{Path, PathBuf};
@@ -75,18 +80,22 @@ impl LuaHost {
     chunk.into_function()
   }
 
-  // load a system package (e.g. loads system.main when you pass a name of "main")
-  pub fn load_system_package_root<'lua>(
+  // load a system (later other filesystem) package
+  pub fn load_filesystem_package<'lua>(
     &self,
     lua_ctx: rlua::Context<'lua>,
-    name: &str,
+    reference: &PackageReference,
   ) -> rlua::Result<rlua::Value<'lua>> {
+    assert!(reference.package_root() == PackageReference::system_package_root());
+
+    let name = reference.package();
+
     let content = self
       .system_package_root_to_buf(name)
       .map_err(|e| rlua::Error::external(format!("Loading system package {}: {}", name, e)))?;
     lua_ctx
       .load(&content)
-      .set_name(&format!("system package {}", name))?
+      .set_name(&reference.to_string())?
       .eval()
       .map_err(|e| {
         log::error!("Error loading system package {}: {}", name, e);
@@ -209,6 +218,123 @@ impl<'lua> rlua::ToLua<'lua> for SerializableValue {
       SerializableValue::Dict(dict) => lua
         .create_table_from(dict.into_iter())
         .map(|t| rlua::Value::Table(t)),
+    }
+  }
+}
+
+#[derive(Clone, Debug, Hash, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(try_from = "String", into = "String")]
+/// Represents a lua package we might want to load/save either from a repo or from in-memory.
+/// e.g. system.foo -> user of system, default repo, package foo
+/// e.g. jder/live.foo.bar -> user of jder, repo live, package foo.bar
+///
+/// The first two components (everything up to the first dot) are known as the package root
+/// and usually corresponds to a directory on disk that lua code lives in.
+pub struct PackageReference {
+  user: String,
+  repo: Option<String>,
+  package: String,
+}
+
+impl PackageReference {
+  pub fn new(name: &str) -> ResultAnyError<PackageReference> {
+    lazy_static! {
+      // TODO: For now we only support a single package component (i.e. system.foo, not system.foo.bar)
+      static ref RE: Regex = Regex::new(r"^(?P<user>[[:word:]]+)(/(?P<repo>[[:word:]]+))?\.(?P<package>[[:word:]]+)$").unwrap();
+    }
+
+    RE.captures(name)
+      .map(|caps| PackageReference {
+        user: caps.name("user").unwrap().as_str().to_string(),
+        repo: caps.name("repo").map(|s| s.as_str().to_string()),
+        package: caps.name("package").unwrap().as_str().to_string(),
+      })
+      .ok_or_else(|| "invalid object kind".into())
+  }
+
+  pub fn user(&self) -> &str {
+    return &self.user;
+  }
+
+  pub fn for_user(username: &str) -> PackageReference {
+    PackageReference::new(&format!("{}/live.user", username)).unwrap()
+  }
+
+  pub fn for_room() -> PackageReference {
+    PackageReference::for_system("room").unwrap()
+  }
+
+  pub fn for_system(name: &str) -> ResultAnyError<PackageReference> {
+    PackageReference::new(&format!("system.{}", name))
+  }
+
+  pub fn main_package() -> PackageReference {
+    PackageReference::for_system("main").unwrap()
+  }
+
+  pub fn package_root(&self) -> String {
+    let mut result = self.user.clone();
+    if let Some(ref r) = self.repo {
+      result.push('/');
+      result.push_str(&r);
+    }
+    result
+  }
+
+  pub fn system_package_root() -> &'static str {
+    return "system";
+  }
+
+  pub fn is_live_package(&self) -> bool {
+    self.repo.as_deref() == Some("live")
+  }
+
+  pub fn package(&self) -> &str {
+    return &self.package;
+  }
+}
+
+impl std::fmt::Display for PackageReference {
+  fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    match self.repo {
+      None => write!(f, "{}.{}", self.user, self.package),
+      Some(ref repo) => write!(f, "{}/{}.{}", self.user, repo, self.package),
+    }
+  }
+}
+
+impl TryFrom<String> for PackageReference {
+  type Error = AnyError;
+  fn try_from(s: String) -> ResultAnyError<PackageReference> {
+    return PackageReference::new(&s);
+  }
+}
+
+impl Into<String> for PackageReference {
+  fn into(self) -> String {
+    return self.to_string();
+  }
+}
+
+impl<'lua> rlua::ToLua<'lua> for PackageReference {
+  fn to_lua(self, lua_ctx: rlua::Context<'lua>) -> rlua::Result<rlua::Value> {
+    self.to_string().to_lua(lua_ctx)
+  }
+}
+
+impl<'lua> rlua::FromLua<'lua> for PackageReference {
+  fn from_lua(
+    value: rlua::Value<'lua>,
+    _lua_ctx: rlua::Context<'lua>,
+  ) -> rlua::Result<PackageReference> {
+    // TODO: more validation
+    if let rlua::Value::String(s) = value {
+      let string = s.to_str()?;
+      Ok(PackageReference::new(string).to_lua_err()?)
+    } else {
+      Err(rlua::Error::external(
+        "Expected a string for an object kind",
+      ))
     }
   }
 }

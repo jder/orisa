@@ -1,8 +1,9 @@
 use crate::chat::ToClientMessage;
+use crate::lua::PackageReference;
 use crate::lua::{LuaHost, SerializableValue};
 use crate::object::actor::{ObjectActorState, ObjectMessage};
 use crate::object::api;
-use crate::world::{Id, ObjectKind, World, WorldRef};
+use crate::world::{Id, World, WorldRef};
 use rlua;
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -67,7 +68,10 @@ impl ObjectExecutor {
         Ok(lua_state) => lua_state.context(|lua_ctx| {
           if !*loaded_main {
             // we try loading first so we we re-try on failures to produce the error again
-            wf.read(|w| w.get_lua_host().load_system_package_root(lua_ctx, "main"))?;
+            wf.read(|w| {
+              w.get_lua_host()
+                .load_filesystem_package(lua_ctx, &PackageReference::main_package())
+            })?;
             *loaded_main = true;
           }
           body(lua_ctx)
@@ -101,7 +105,7 @@ impl ObjectExecutor {
 #[derive(Clone)]
 pub enum GlobalWrite {
   SetLocalPackageContent {
-    kind: ObjectKind,
+    package: PackageReference,
     content: String,
   },
   SendMessage {
@@ -130,8 +134,8 @@ impl GlobalWrite {
   // TODO: would be nice to consume here but it's tricky due to the schenanigans above
   pub fn commit(&self, world: &mut World) {
     match self {
-      GlobalWrite::SetLocalPackageContent { kind, content } => {
-        world.set_local_package_content(kind.clone(), content.clone())
+      GlobalWrite::SetLocalPackageContent { package, content } => {
+        world.set_live_package_content(package.clone(), content.clone())
       }
       GlobalWrite::SendMessage { target, message } => world.send_message(*target, message.clone()),
       GlobalWrite::SendClientMessage { target, message } => {

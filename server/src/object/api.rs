@@ -2,7 +2,7 @@ use crate::chat::{ChatRowContent, ToClientMessage};
 use crate::lua::*;
 use crate::object::actor::ObjectMessage;
 use crate::object::executor::{ExecutionState as S, GlobalWrite};
-use crate::world::{Id, ObjectKind};
+use crate::object::types::{Id, ObjectKind};
 use rlua;
 use rlua::ExternalResult;
 use rlua::ToLua;
@@ -149,32 +149,32 @@ fn get_attr(_lua_ctx: rlua::Context, (id, key): (Id, String)) -> rlua::Result<Se
   Ok(S::with_world(|w| w.get_attr(id, &key)).unwrap_or(SerializableValue::Nil))
 }
 
-fn get_local_package_content(
-  _lua_ctx: rlua::Context,
-  name: String,
-) -> rlua::Result<Option<String>> {
+fn get_live_package_content(_lua_ctx: rlua::Context, name: String) -> rlua::Result<Option<String>> {
   S::with_world(|w| {
-    ObjectKind::new(&name).map(|kind| w.get_local_package_content(kind).map(|s| s.clone()))
+    PackageReference::new(&name)
+      .map(|package| w.get_live_package_content(package).map(|s| s.clone()))
   })
   .map_err(|e| rlua::Error::external(e))
 }
 
-fn send_save_local_package_content(
+fn send_save_live_package_content(
   _lua_ctx: rlua::Context,
   (name, content): (String, String),
 ) -> rlua::Result<()> {
-  let destination_kind = ObjectKind::new(&name).to_lua_err()?;
+  let destination_package = PackageReference::new(&name).to_lua_err()?;
   let id = S::get_id();
 
-  if Some(destination_kind.user().to_string()) == S::with_world(|w| w.username(id)) {
+  if Some(destination_package.user().to_string()) == S::with_world(|w| w.username(id))
+    && destination_package.is_live_package()
+  {
     S::add_write(GlobalWrite::SetLocalPackageContent {
-      kind: ObjectKind::new(&name).to_lua_err()?,
+      package: PackageReference::new(&name).to_lua_err()?,
       content: content,
     });
     Ok(())
   } else {
     Err(rlua::Error::external(
-      "You can only write to local packages named $username.something",
+      "You can only write to live packages named $username/live.something",
     ))
   }
 }
@@ -281,9 +281,9 @@ fn print_override<'lua>(
   Ok(())
 }
 
-// We load packages in 2 flavours:
+// We currently load packages in 2 flavours:
 // * system.foo, which loads "foo.lua" from the filesystem.
-// * user.foo, which loads the local (in-memory) package named user.foo from the world.
+// * user/live.foo, which loads the local (in-memory) package named user.foo from the world.
 // In the future, we want to extend this to user/repo.foo
 fn require(lua_ctx: rlua::Context, package_name: String) -> rlua::Result<rlua::Value> {
   let loaded = lua_ctx
@@ -293,30 +293,33 @@ fn require(lua_ctx: rlua::Context, package_name: String) -> rlua::Result<rlua::V
   let existing = loaded.get::<_, rlua::Value>(package_name.clone())?;
   if let rlua::Value::Nil = existing {
     // Load the package
-    let package_pieces: Vec<String> = package_name.split(".").map(|s| s.to_string()).collect();
+    let package_reference = PackageReference::new(&package_name).to_lua_err()?;
 
-    if package_pieces.len() != 2 {
-      return Err(rlua::Error::external(
-        "Expected package named either system.foo or user.foo",
-      ));
-    }
-
-    let package = if package_pieces.first() == Some(&ObjectKind::system_package_root().to_string())
-    {
-      // from the system
-      let rest = package_pieces[1..].join("/");
-      S::with_world(|w| w.get_lua_host().load_system_package_root(lua_ctx, &rest))
-    } else {
-      // from local packages
+    let package = if package_reference.is_live_package() {
       S::with_world(|w| {
         let content = w
-          .get_local_package_content(ObjectKind::new(&package_name).to_lua_err()?)
+          .get_live_package_content(PackageReference::new(&package_name).to_lua_err()?)
           .ok_or(rlua::Error::external(format!(
             "Can't find local package {}",
             package_name
           )))?;
-        lua_ctx.load(content).set_name(&package_name)?.eval()
+        lua_ctx
+          .load(content)
+          .set_name(&package_reference.to_string())?
+          .eval()
       })
+    } else if package_reference.package_root()
+      == PackageReference::system_package_root().to_string()
+    {
+      // from the system
+      S::with_world(|w| {
+        w.get_lua_host()
+          .load_filesystem_package(lua_ctx, &package_reference)
+      })
+    } else {
+      return Err(rlua::Error::external(
+        "Only the system or live repos are currently supported.",
+      ));
     };
 
     package.and_then(|v: rlua::Value| {
@@ -366,12 +369,12 @@ pub(super) fn register_api(lua_ctx: rlua::Context) -> rlua::Result<()> {
   orisa.set("get_attr", lua_ctx.create_function(get_attr)?)?;
 
   orisa.set(
-    "get_local_package_content",
-    lua_ctx.create_function(get_local_package_content)?,
+    "get_live_package_content",
+    lua_ctx.create_function(get_live_package_content)?,
   )?;
   orisa.set(
-    "send_save_local_package_content",
-    lua_ctx.create_function(send_save_local_package_content)?,
+    "send_save_live_package_content",
+    lua_ctx.create_function(send_save_live_package_content)?,
   )?;
 
   orisa.set("create_object", lua_ctx.create_function(create_object)?)?;
