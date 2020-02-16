@@ -22,7 +22,7 @@ const InteractionPane = (props: {username: string}) => {
         } else if (isBacklogMessage(message)) {
           return message.history;
         } else if (isLogMessage(message)) {
-          if (message.level == "error") {
+          if (message.level === "error") {
             console.error(message.message);
           } else {
             console.log(message.message);
