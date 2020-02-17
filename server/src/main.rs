@@ -53,18 +53,12 @@ fn world_load_path() -> PathBuf {
   state_dir.join("world.json").to_path_buf()
 }
 
-fn load_world(world: &mut World, path: &Path) -> ResultAnyError<()> {
-  let file = File::open(path)?;
-  world.unfreeze_read(file)?;
-  Ok(())
-}
-
 fn save_world(world_ref: WorldRef) -> ResultAnyError<()> {
   let state_dir_env = env::var("ORISA_STATE_DIRECTORY").unwrap_or("state".to_string());
   let state_dir = Path::new(&state_dir_env);
   let temp_path = state_dir.join("world-out.json");
   let file = File::create(&temp_path)?;
-  World::freeze(world_ref, file)?;
+  world_ref.read(|w| w.save(file))?;
 
   let final_path = state_dir.join("world.json");
   let _ = copy(final_path.clone(), state_dir.join("world.bak.json")); // ignore result
@@ -77,16 +71,16 @@ async fn run_server() -> Result<(), std::io::Error> {
 
   // default to assuming killpop is checked out next to orisa
   let code_dir_env = env::var("ORISA_CODE_DIRECTORY").unwrap_or("../../killpop".to_string());
-  let (_world, world_ref) = World::new(arbiter.clone(), &Path::new(&code_dir_env));
 
-  world_ref.write(|w| {
-    let path = world_load_path();
-    if path.exists() {
-      load_world(w, &path).expect("Error loading world")
-    } else {
-      w.unfreeze_empty(); // start from scratch
-    }
-  });
+  let path = world_load_path();
+  let read = if path.exists() {
+    Some(File::open(path).expect("Error opening world"))
+  } else {
+    None
+  };
+
+  let (_world, world_ref) =
+    World::new(arbiter.clone(), &Path::new(&code_dir_env), read).expect("error loading world");
 
   let data = web::Data::new(AppState {
     world_ref: world_ref.clone(),

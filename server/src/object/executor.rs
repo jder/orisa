@@ -1,16 +1,15 @@
 use crate::chat::ToClientMessage;
 use crate::lua::PackageReference;
 use crate::lua::{LuaHost, SerializableValue};
-use crate::object::actor::{ObjectActorState, ObjectMessage};
 use crate::object::api;
+use crate::object::types::Message;
 use crate::world::{Id, World, WorldRef};
 use rlua;
 use std::cell::RefCell;
 use std::collections::HashMap;
-use std::ops::DerefMut;
 
 pub struct ObjectExecutor {
-  generation: i64,
+  world_ref: WorldRef,
   // We use a Result here so that if this fails to initialize, it will
   // produce the init error when someone tries to use this executor
   lua_state: rlua::Result<rlua::Lua>,
@@ -18,7 +17,7 @@ pub struct ObjectExecutor {
 }
 
 impl ObjectExecutor {
-  pub fn new(lua_host: &LuaHost, generation: i64) -> ObjectExecutor {
+  pub fn new(lua_host: &LuaHost, world_ref: WorldRef) -> ObjectExecutor {
     let initial_state = lua_host.fresh_state();
 
     let ready_state: rlua::Result<rlua::Lua> = initial_state.and_then(|state| {
@@ -28,41 +27,32 @@ impl ObjectExecutor {
     });
 
     ObjectExecutor {
+      world_ref: world_ref,
       lua_state: ready_state,
-      generation: generation,
       loaded_main: false,
     }
   }
-
+  
   pub fn run_for_object<'a, F, T>(
-    wf: WorldRef,
-    id: Id,
-    current_message: &'a ObjectMessage,
-    object_state: &'a mut ObjectActorState,
+    &mut self,
+    current_message: &'a Message,
     body: F,
   ) -> rlua::Result<T>
   where
     F: FnOnce(rlua::Context) -> rlua::Result<T>,
   {
     let state = ExecutionState {
-      id: id,
       current_message: current_message,
-      world: wf.clone(),
-      object_state: RefCell::new(object_state),
+      world: self.world_ref.clone(),
       writes: RefCell::new(Vec::new()),
       changed_attrs: RefCell::new(HashMap::new()),
     };
 
-    let mut executor = wf.write(|_w| {
-      let kind = _w.kind(id);
-      _w.get_executor(kind)
-    });
-
     // This is a gross hack but is safe since the scoped thread local ensures
     // this value only exists as long as this block.
+    let wf = self.world_ref.clone();
     let result = EXECUTION_STATE.set(unsafe { make_static(&state) }, || {
-      let exec = executor.deref_mut();
-      let (state, loaded_main) = (&exec.lua_state, &mut exec.loaded_main);
+      let (state, loaded_main) = (self.lua_state, &mut self.loaded_main);
 
       match state {
         Ok(lua_state) => lua_state.context(|lua_ctx| {
@@ -87,7 +77,7 @@ impl ObjectExecutor {
       for write in state.writes.borrow().iter() {
         write.commit(w)
       }
-      w.set_attrs(id, state.changed_attrs.borrow().clone())
+      w.get_state_mut().set_attrs(current_message.target, state.changed_attrs.borrow().clone())
     });
     result
   }
@@ -136,6 +126,7 @@ impl GlobalWrite {
     match self {
       GlobalWrite::SetLocalPackageContent { package, content } => {
         world.set_live_package_content(package.clone(), content.clone())
+        world.reload_code(); // TODO: restrict to just this kind
       }
       GlobalWrite::SendMessage { target, message } => world.send_message(*target, message.clone()),
       GlobalWrite::SendClientMessage { target, message } => {
@@ -185,10 +176,8 @@ impl GlobalWrite {
 }
 
 pub(super) struct ExecutionState<'a> {
-  pub(super) id: Id,
-  pub(super) current_message: &'a ObjectMessage,
+  pub(super) current_message: &'a Message,
   pub(super) world: WorldRef,
-  object_state: RefCell<&'a mut ObjectActorState>,
   writes: RefCell<Vec<GlobalWrite>>,
   changed_attrs: RefCell<HashMap<String, SerializableValue>>,
 }

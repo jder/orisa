@@ -1,7 +1,7 @@
 use crate::lua::SerializableValue;
-use crate::object::actor::ObjectMessage;
+use crate::object::types::Message;
 use crate::world::{Id, WorldRef};
-use actix::{Actor, AsyncContext, Handler, Message, StreamHandler};
+use actix::{Actor, AsyncContext, Handler, Message as ActixMessage, StreamHandler};
 use actix_web::web;
 use actix_web_actors::ws;
 use serde::{Deserialize, Serialize};
@@ -26,15 +26,13 @@ impl Actor for ChatSocket {
       // we use try_write here because the world could be gone if we're tearing down
       self.app_data.world_ref.try_write(|world| {
         world.remove_chat_connection(id, ctx.address());
-        world.send_message(
-          self.id(),
-          ObjectMessage {
-            original_user: Some(self.id()),
-            immediate_sender: self.id(),
-            name: "disconnected".to_string(),
-            payload: SerializableValue::Nil,
-          },
-        )
+        world.send_message(Message {
+          target: self.id(),
+          original_user: Some(self.id()),
+          immediate_sender: self.id(),
+          name: "disconnected".to_string(),
+          payload: SerializableValue::Nil,
+        })
       });
       log::info!("ChatSocket stopped for id {}", id);
     }
@@ -83,7 +81,7 @@ impl ChatSocket {
   fn handle_login(&mut self, username: &str, ctx: &mut ws::WebsocketContext<Self>) {
     let world_ref = self.app_data.world_ref.clone();
     world_ref.write(|world| {
-      let id = world.get_or_create_user(username);
+      let id = world.get_state_mut().get_or_create_user(username);
 
       if let Some(existing_id) = self.self_id {
         world.remove_chat_connection(existing_id, ctx.address());
@@ -100,15 +98,13 @@ impl ChatSocket {
       log::warn!("Got command when had no id")
     } else {
       self.app_data.world_ref.read(|world| {
-        world.send_message(
-          self.id(),
-          ObjectMessage {
-            original_user: Some(self.id()),
-            immediate_sender: self.id(),
-            name: name.to_string(),
-            payload: payload,
-          },
-        )
+        world.send_message(Message {
+          target: self.id(),
+          original_user: Some(self.id()),
+          immediate_sender: self.id(),
+          name: name.to_string(),
+          payload: payload,
+        })
       })
     }
   }
@@ -184,7 +180,7 @@ pub enum ToClientMessage {
   EditFile { name: String, content: String },
 }
 
-impl Message for ToClientMessage {
+impl ActixMessage for ToClientMessage {
   type Result = ();
 }
 
@@ -202,7 +198,9 @@ impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for ChatSocket {
     match msg {
       Ok(ws::Message::Ping(msg)) => ctx.pong(&msg),
       Ok(ws::Message::Text(text)) => {
-        self.handle_message(&text, ctx).unwrap();
+        if let Err(e) = self.handle_message(&text, ctx) {
+          log::error!("Failed handling message from user: {}", e);
+        }
       }
       _ => (),
     }

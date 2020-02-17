@@ -1,4 +1,4 @@
-use crate::lua::PackageReference;
+use crate::lua::{PackageReference, SerializableValue};
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
@@ -42,4 +42,13 @@ impl Id {
   pub fn new(id: usize) -> Id {
     Id(id)
   }
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct Message {
+  pub target: Id,
+  pub immediate_sender: Id,
+  pub original_user: Option<Id>,
+  pub name: String,
+  pub payload: SerializableValue,
 }
