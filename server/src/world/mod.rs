@@ -3,33 +3,22 @@ pub mod state;
 use self::actor::{ControlMessage, WorldActor};
 use crate::chat::{ChatSocket, ToClientMessage};
 use crate::lua::LuaHost;
-use crate::object::executor::ObjectExecutor;
 use crate::object::types::Message;
 pub use crate::object::types::{Id, ObjectKind};
 use crate::util::WeakRw;
 use actix;
 use actix::Actor;
-use futures::executor;
-use futures::stream::FuturesUnordered;
-use futures::stream::StreamExt;
 use multimap::MultiMap;
 use serde::{Deserialize, Serialize};
 use serde_json;
 pub use state::State;
-use std::collections::HashMap;
 use std::io::{Read, Write};
-use std::ops::{Deref, DerefMut};
-use std::sync::{Arc, Mutex, RwLock};
+use std::sync::{Arc, RwLock};
 
 pub struct World {
   state: State,
-
-  arbiter: actix::Arbiter,
-  own_ref: WorldRef, // TODO: RM
   actor: actix::Addr<WorldActor>,
-
   lua_host: LuaHost,
-
   chat_connections: MultiMap<Id, actix::Addr<ChatSocket>>,
 }
 
@@ -90,7 +79,7 @@ impl World {
   }
 
   pub fn new(
-    arbiter: actix::Arbiter,
+    arbiter: &actix::Arbiter,
     lua_path: &std::path::Path,
     from: Option<impl Read>,
   ) -> Result<(Arc<RwLock<Option<World>>>, WorldRef), serde_json::error::Error> {
@@ -109,13 +98,11 @@ impl World {
     let lua_host = LuaHost::new(lua_path).unwrap();
 
     let actor = WorldActor::new(&lua_host, &world_ref);
-    let addr = WorldActor::start_in_arbiter(&arbiter, |_ctx| actor);
+    let addr = WorldActor::start_in_arbiter(arbiter, |_ctx| actor);
 
     let world = World {
       state: state,
-      arbiter: arbiter,
       actor: addr,
-      own_ref: world_ref.clone(),
       chat_connections: MultiMap::new(),
       lua_host: lua_host,
     };

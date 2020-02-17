@@ -3,7 +3,6 @@ use crate::chat::ToClientMessage;
 use crate::lua::{LuaHost, PackageReference};
 use crate::object::executor::ObjectExecutor;
 use crate::object::types::*;
-use crate::util::{AnyError, ResultAnyError};
 use actix;
 use std::collections::HashMap;
 
@@ -24,7 +23,7 @@ impl actix::Message for Message {
 impl actix::Handler<Message> for WorldActor {
   type Result = ();
 
-  fn handle(&mut self, msg: Message, ctx: &mut actix::Context<Self>) {
+  fn handle(&mut self, msg: Message, _ctx: &mut actix::Context<Self>) {
     let _ = self.execute_message(&msg).map_err(|err| {
       self.report_error(&msg, &err);
       log::error!("Failed running payload: {:?}", err);
@@ -43,7 +42,7 @@ impl actix::Message for ControlMessage {
 impl actix::Handler<ControlMessage> for WorldActor {
   type Result = ();
 
-  fn handle(&mut self, msg: ControlMessage, ctx: &mut actix::Context<Self>) {
+  fn handle(&mut self, msg: ControlMessage, _ctx: &mut actix::Context<Self>) {
     match msg {
       ControlMessage::ReloadCode => {
         log::info!("reloading code");

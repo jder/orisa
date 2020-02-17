@@ -3,7 +3,7 @@ use crate::lua::PackageReference;
 use crate::lua::{LuaHost, SerializableValue};
 use crate::object::api;
 use crate::object::types::Message;
-use crate::world::state::State as WorldState;
+use crate::world::state::{Error as WorldError, State as WorldState};
 use crate::world::{Id, World, WorldRef};
 use rlua;
 use std::cell::RefCell;
@@ -76,11 +76,11 @@ impl ObjectExecutor {
 
     wf.write(|w| {
       for write in state.writes.borrow().iter() {
-        write.commit(w)
+        write.commit(w)?
       }
       w.get_state_mut()
         .set_attrs(current_message.target, state.changed_attrs.borrow().clone())
-    });
+    })?;
     result
   }
 }
@@ -123,7 +123,7 @@ pub enum GlobalWrite {
 
 impl GlobalWrite {
   // TODO: would be nice to consume here but it's tricky due to the schenanigans above
-  pub fn commit(&self, world: &mut World) {
+  pub fn commit(&self, world: &mut World) -> Result<(), WorldError> {
     match self {
       GlobalWrite::SetLocalPackageContent { package, content } => {
         world
@@ -140,7 +140,7 @@ impl GlobalWrite {
         parent,
         init_message,
       } => {
-        world.get_state_mut().move_object(*id, *parent);
+        world.get_state_mut().move_object(*id, *parent)?;
         world.send_message(init_message.clone())
       }
       GlobalWrite::MoveObject {
@@ -150,7 +150,7 @@ impl GlobalWrite {
         sender,
         payload,
       } => {
-        world.get_state_mut().move_object(*child, *new_parent);
+        world.get_state_mut().move_object(*child, *new_parent)?;
         world.send_message(Message {
           target: *child,
           original_user: *original_user,
@@ -170,6 +170,7 @@ impl GlobalWrite {
         });
       }
     }
+    Ok(())
   }
 }
 
@@ -204,13 +205,6 @@ impl<'a> ExecutionState<'a> {
     F: FnOnce(&World) -> T,
   {
     Self::with_state(|s| s.world.read(|w| body(w)))
-  }
-
-  pub(super) fn with_world_mut<T, F>(body: F) -> T
-  where
-    F: FnOnce(&mut World) -> T,
-  {
-    Self::with_state(|s| s.world.write(|w| body(w)))
   }
 
   pub(super) fn with_world_state<T, F>(body: F) -> T

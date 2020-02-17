@@ -80,7 +80,7 @@ async fn run_server() -> Result<(), std::io::Error> {
   };
 
   let (_world, world_ref) =
-    World::new(arbiter.clone(), &Path::new(&code_dir_env), read).expect("error loading world");
+    World::new(&arbiter, &Path::new(&code_dir_env), read).expect("error loading world");
 
   let data = web::Data::new(AppState {
     world_ref: world_ref.clone(),
