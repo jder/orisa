@@ -152,10 +152,13 @@ impl State {
     self.live_packages.insert(package, content);
   }
 
-  pub fn set_attrs(&mut self, id: Id, new_attrs: HashMap<String, SerializableValue>) -> Result<()> {
-    self
-      .object_mut(id)
-      .map(|o| o.attrs.extend(new_attrs.into_iter()))
+  pub fn set_attr(
+    &mut self,
+    id: Id,
+    key: String,
+    value: SerializableValue,
+  ) -> Result<Option<SerializableValue>> {
+    self.object_mut(id).map(|o| o.attrs.insert(key, value))
   }
 
   pub fn get_attr(&self, id: Id, name: &str) -> Result<Option<SerializableValue>> {

@@ -1,6 +1,6 @@
 use crate::chat::{ChatRowContent, ToClientMessage};
 use crate::lua::*;
-use crate::object::executor::{ExecutionState as S, GlobalWrite};
+use crate::object::executor::ExecutionState as S;
 use crate::object::types::*;
 use rlua;
 use rlua::ExternalResult;
@@ -21,51 +21,50 @@ fn send(
   _lua_ctx: rlua::Context,
   (object_id, name, payload): (Id, String, SerializableValue),
 ) -> rlua::Result<()> {
-  let message = Message {
-    target: object_id,
-    original_user: S::get_original_user(),
-    immediate_sender: S::get_id(),
-    name: name,
-    payload: payload,
-  };
-
-  // TODO: we could optimize this by sending directly if no other writes have happened yet
-  S::add_write(GlobalWrite::SendMessage { message: message });
-
-  Ok(())
+  S::with_world_mut(|w| {
+    Ok(w.send_message(Message {
+      target: object_id,
+      original_user: S::get_original_user(),
+      immediate_sender: S::get_id(),
+      name: name,
+      payload: payload,
+    }))
+  })
 }
 
 fn send_user_tell(_lua_ctx: rlua::Context, message: String) -> rlua::Result<()> {
-  // TODO: we could optimize this by sending directly if no other writes have happened yet
-  S::add_write(GlobalWrite::SendClientMessage {
-    target: S::get_id(),
-    message: ToClientMessage::Tell {
-      content: ChatRowContent::new(&message),
-    },
-  });
-  Ok(())
+  S::with_world_mut(|w| {
+    Ok(w.send_client_message(
+      S::get_id(),
+      ToClientMessage::Tell {
+        content: ChatRowContent::new(&message),
+      },
+    ))
+  })
 }
 
 fn send_user_tell_html(_lua_ctx: rlua::Context, html: String) -> rlua::Result<()> {
   // TODO: we could optimize this by sending directly if no other writes have happened yet
-  S::add_write(GlobalWrite::SendClientMessage {
-    target: S::get_id(),
-    message: ToClientMessage::Tell {
-      content: ChatRowContent::new_html(&html),
-    },
-  });
-  Ok(())
+  S::with_world_mut(|w| {
+    Ok(w.send_client_message(
+      S::get_id(),
+      ToClientMessage::Tell {
+        content: ChatRowContent::new_html(&html),
+      },
+    ))
+  })
 }
 
 fn send_user_backlog(_lua_ctx: rlua::Context, messages: Vec<String>) -> rlua::Result<()> {
   // TODO: we could optimize this by sending directly if no other writes have happened yet
-  S::add_write(GlobalWrite::SendClientMessage {
-    target: S::get_id(),
-    message: ToClientMessage::Backlog {
-      history: messages.iter().map(|s| ChatRowContent::new(s)).collect(),
-    },
-  });
-  Ok(())
+  S::with_world_mut(|w| {
+    Ok(w.send_client_message(
+      S::get_id(),
+      ToClientMessage::Backlog {
+        history: messages.iter().map(|s| ChatRowContent::new(s)).collect(),
+      },
+    ))
+  })
 }
 
 fn send_user_edit_file(
@@ -73,14 +72,15 @@ fn send_user_edit_file(
   (name, content): (String, String),
 ) -> rlua::Result<()> {
   // TODO: we could optimize this by sending directly if no other writes have happened yet
-  S::add_write(GlobalWrite::SendClientMessage {
-    target: S::get_id(),
-    message: ToClientMessage::EditFile {
-      name: name,
-      content: content,
-    },
-  });
-  Ok(())
+  S::with_world_mut(|w| {
+    Ok(w.send_client_message(
+      S::get_id(),
+      ToClientMessage::EditFile {
+        name: name,
+        content: content,
+      },
+    ))
+  })
 }
 
 fn get_username(_lua_ctx: rlua::Context, id: Id) -> rlua::Result<Option<String>> {
@@ -99,7 +99,12 @@ fn set_state(
     // Someday we might relax this given capabilities and probably containment (for concurrency)
     Err(rlua::Error::external("Can only set your own state."))
   } else {
-    Ok(S::with_world_state_mut(|s| s.set_state(id, &key, value))?.unwrap_or(SerializableValue::Nil))
+    S::with_world_state_mut::<SerializableValue, _>(|s| {
+      Ok(
+        s.set_state(id, &key, value)?
+          .unwrap_or(SerializableValue::Nil),
+      )
+    })
   }
 }
 
@@ -121,24 +126,14 @@ fn set_attr(
     Err(rlua::Error::external("Can only set your own attrs."))
   } else {
     Ok(
-      S::with_changed_attrs(|changed_attrs| changed_attrs.insert(key.clone(), value))
-        .or_else(|| S::with_world_state(|w| w.get_attr(id, &key).expect("Error setting own attrs")))
+      S::with_world_state_mut(|s| Ok(s.set_attr(id, key.clone(), value)?))?
         .unwrap_or(SerializableValue::Nil),
     )
   }
 }
 
 fn get_attr(_lua_ctx: rlua::Context, (id, key): (Id, String)) -> rlua::Result<SerializableValue> {
-  let self_id = S::get_id();
-  if id == self_id {
-    if let Some(changed) = S::with_changed_attrs(|attrs| attrs.get(&key).map(|v| v.clone())) {
-      return Ok(changed);
-    }
-  }
-  Ok(
-    S::with_world_state(|w| w.get_attr(id, &key).expect("Error getting own attr"))
-      .unwrap_or(SerializableValue::Nil),
-  )
+  Ok(S::with_world_state(|w| w.get_attr(id, &key))?.unwrap_or(SerializableValue::Nil))
 }
 
 fn get_live_package_content(_lua_ctx: rlua::Context, name: String) -> rlua::Result<Option<String>> {
@@ -159,10 +154,9 @@ fn send_save_live_package_content(
   if Some(destination_package.user().to_string()) == S::with_world_state(|w| w.username(id))
     && destination_package.is_live_package()
   {
-    S::add_write(GlobalWrite::SetLocalPackageContent {
-      package: PackageReference::new(&name).to_lua_err()?,
-      content: content,
-    });
+    S::with_world_state_mut(|s| {
+      Ok(s.set_live_package_content(PackageReference::new(&name).to_lua_err()?, content))
+    })?;
     Ok(())
   } else {
     Err(rlua::Error::external(
@@ -180,21 +174,18 @@ fn create_object(
   _lua_ctx: rlua::Context,
   (parent, kind, created_payload): (Option<Id>, ObjectKind, SerializableValue),
 ) -> rlua::Result<Id> {
-  let id = S::with_world_state_mut(|w| w.create_object(kind));
-
-  S::add_write(GlobalWrite::InitializeObject {
-    id: id,
-    parent: parent,
-    init_message: Message {
+  S::with_world_mut(|w| {
+    let id = w.get_state_mut().create_object(kind);
+    w.get_state_mut().move_object(id, parent)?;
+    w.send_message(Message {
       target: id,
       original_user: S::get_original_user(),
       immediate_sender: S::get_id(),
       name: "created".to_string(),
       payload: created_payload,
-    },
-  });
-
-  Ok(id)
+    });
+    Ok(id)
+  })
 }
 
 fn send_move_object(
@@ -219,16 +210,32 @@ fn send_move_object(
       .map(|p| SerializableValue::String(p.to_string()))
       .unwrap_or(SerializableValue::Nil),
   );
-  let payload = SerializableValue::Dict(info);
 
-  S::add_write(GlobalWrite::MoveObject {
-    child: child,
-    new_parent: new_parent,
-    sender: S::get_id(),
-    payload: payload,
-    original_user: S::get_original_user(),
-  });
-  Ok(())
+  let payload = SerializableValue::Dict(info);
+  let original_user = S::get_original_user();
+  let id = S::get_id();
+
+  S::with_world_mut(|w| {
+    w.get_state_mut().move_object(child, new_parent)?;
+    w.send_message(Message {
+      target: child,
+      original_user: original_user,
+      immediate_sender: id,
+      name: "parent_changed".to_string(),
+      payload: payload.clone(),
+    });
+
+    new_parent.map(|p| {
+      w.send_message(Message {
+        target: p,
+        original_user: original_user,
+        immediate_sender: id,
+        name: "child_added".to_string(),
+        payload: payload.clone(),
+      });
+    });
+    Ok(())
+  })
 }
 
 fn print_override<'lua>(
