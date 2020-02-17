@@ -38,13 +38,15 @@ fn query(
   (object_id, name, payload): (Id, String, SerializableValue),
 ) -> rlua::Result<SerializableValue> {
   S::with_state_mut(|s| {
+    let id = s.current_message.target;
+
     if s.in_query {
       // TODO: lift this restriction once we can re-use executors or have a pool of them
       return Err(rlua::Error::external(
         "You currently can't run a query from a query, sorry.",
       ));
     }
-    if object_id == S::get_id() {
+    if object_id == id {
       // TODO: lift this restriction once we can re-use executors or have a pool of them
       return Err(rlua::Error::external(
         "You currently query yourself, sorry.",
@@ -52,7 +54,7 @@ fn query(
     }
     let result = s.actor.execute_query(&Message {
       target: object_id,
-      immediate_sender: S::get_id(),
+      immediate_sender: id,
       original_user: s.current_message.original_user,
       name: name.clone(),
       payload: payload.clone(),
