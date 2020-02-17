@@ -2,16 +2,33 @@ use crate::lua::LuaHost;
 use crate::lua::PackageReference;
 use crate::object::api;
 use crate::object::types::Message;
+use crate::world::actor::WorldActor;
 use crate::world::state::State as WorldState;
 use crate::world::{Id, World, WorldRef};
 use rlua;
+use std::cell::RefCell;
+use std::rc::Rc;
 
+#[derive(Clone)]
 pub struct ObjectExecutor {
   world_ref: WorldRef,
+  body: Rc<RefCell<ObjectExecutorBody>>,
+}
+
+struct ObjectExecutorBody {
   // We use a Result here so that if this fails to initialize, it will
   // produce the init error when someone tries to use this executor
   lua_state: rlua::Result<rlua::Lua>,
   loaded_main: bool,
+}
+
+impl ObjectExecutorBody {
+  fn new(lua_state: rlua::Result<rlua::Lua>) -> Rc<RefCell<ObjectExecutorBody>> {
+    Rc::new(RefCell::new(ObjectExecutorBody {
+      lua_state: lua_state,
+      loaded_main: false,
+    }))
+  }
 }
 
 impl ObjectExecutor {
@@ -26,30 +43,35 @@ impl ObjectExecutor {
 
     ObjectExecutor {
       world_ref: world_ref,
-      lua_state: ready_state,
-      loaded_main: false,
+      body: ObjectExecutorBody::new(ready_state),
     }
   }
 
   pub fn run_for_object<'a, F, T>(
-    &mut self,
+    &self,
+    actor: &mut WorldActor,
     current_message: &'a Message,
+    is_query: bool,
     body: F,
   ) -> rlua::Result<T>
   where
     F: FnOnce(rlua::Context) -> rlua::Result<T>,
   {
-    let state = ExecutionState {
+    let state = RefCell::new(ExecutionState {
       current_message: current_message,
+      actor: actor,
       world: self.world_ref.clone(),
-      in_query: false,
-    };
+      in_query: is_query,
+    });
 
     // This is a gross hack but is safe since the scoped thread local ensures
     // this value only exists as long as this block.
     let wf = self.world_ref.clone();
     EXECUTION_STATE.set(unsafe { make_static(&state) }, || {
-      let (state, loaded_main) = (&self.lua_state, &mut self.loaded_main);
+      let ObjectExecutorBody {
+        lua_state: ref state,
+        ref mut loaded_main,
+      } = *self.body.borrow_mut();
 
       match state {
         Ok(lua_state) => lua_state.context(|lua_ctx| {
@@ -74,8 +96,9 @@ impl ObjectExecutor {
 
 pub(super) struct ExecutionState<'a> {
   pub(super) current_message: &'a Message,
+  pub(super) actor: &'a mut WorldActor,
   world: WorldRef,
-  in_query: bool,
+  pub(super) in_query: bool,
 }
 
 impl<'a> ExecutionState<'a> {
@@ -83,7 +106,14 @@ impl<'a> ExecutionState<'a> {
   where
     F: FnOnce(&ExecutionState) -> T,
   {
-    EXECUTION_STATE.with(|s| body(s))
+    EXECUTION_STATE.with(|s| body(&s.borrow()))
+  }
+
+  pub(super) fn with_state_mut<T, F>(body: F) -> T
+  where
+    F: FnOnce(&mut ExecutionState) -> T,
+  {
+    EXECUTION_STATE.with(|s| body(&mut s.borrow_mut()))
   }
 
   pub(super) fn with_world<T, F>(body: F) -> T
@@ -135,9 +165,11 @@ impl<'a> ExecutionState<'a> {
   }
 }
 
-scoped_thread_local! {static EXECUTION_STATE: ExecutionState}
+scoped_thread_local! {static EXECUTION_STATE: RefCell<ExecutionState>}
 
-unsafe fn make_static<'a>(p: &'a ExecutionState<'a>) -> &'static ExecutionState<'static> {
+unsafe fn make_static<'a>(
+  p: &'a RefCell<ExecutionState<'a>>,
+) -> &'static RefCell<ExecutionState<'static>> {
   use std::mem;
   mem::transmute(p)
 }

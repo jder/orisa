@@ -2,6 +2,7 @@ use crate::chat::{ChatRowContent, ToClientMessage};
 use crate::lua::*;
 use crate::object::executor::ExecutionState as S;
 use crate::object::types::*;
+use crate::world::actor::WorldActor;
 use rlua;
 use rlua::ExternalResult;
 use rlua::ToLua;
@@ -29,6 +30,39 @@ fn send(
       name: name,
       payload: payload,
     }))
+  })
+}
+
+fn query(
+  lua_ctx: rlua::Context,
+  (object_id, name, payload): (Id, String, SerializableValue),
+) -> rlua::Result<SerializableValue> {
+  S::with_state_mut(|s| {
+    if s.in_query {
+      // TODO: lift this restriction once we can re-use executors or have a pool of them
+      return Err(rlua::Error::external(
+        "You currently can't run a query from a query, sorry.",
+      ));
+    }
+    if object_id == S::get_id() {
+      // TODO: lift this restriction once we can re-use executors or have a pool of them
+      return Err(rlua::Error::external(
+        "You currently query yourself, sorry.",
+      ));
+    }
+    let result = s.actor.execute_query(&Message {
+      target: object_id,
+      immediate_sender: S::get_id(),
+      original_user: s.current_message.original_user,
+      name: name.clone(),
+      payload: payload.clone(),
+    });
+
+    // Restore current message before returning control to the caller
+    WorldActor::set_globals_for_message(&lua_ctx, s.current_message)
+      .expect("Unable to restore previous globals");
+
+    result
   })
 }
 
@@ -337,6 +371,7 @@ pub(super) fn register_api(lua_ctx: rlua::Context) -> rlua::Result<()> {
   let orisa = lua_ctx.create_table()?;
 
   orisa.set("send", lua_ctx.create_function(send)?)?;
+  orisa.set("query", lua_ctx.create_function(query)?)?;
   orisa.set("send_user_tell", lua_ctx.create_function(send_user_tell)?)?;
   orisa.set(
     "send_user_tell_html",

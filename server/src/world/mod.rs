@@ -1,4 +1,4 @@
-mod actor;
+pub mod actor;
 pub mod state;
 use self::actor::{ControlMessage, WorldActor};
 use crate::chat::{ChatSocket, ToClientMessage};
@@ -97,8 +97,11 @@ impl World {
 
     let lua_host = LuaHost::new(lua_path).unwrap();
 
-    let actor = WorldActor::new(&lua_host, &world_ref);
-    let addr = WorldActor::start_in_arbiter(arbiter, |_ctx| actor);
+    let addr = {
+      let lua_host = lua_host.clone();
+      let world_ref = world_ref.clone();
+      WorldActor::start_in_arbiter(arbiter, move |_ctx| WorldActor::new(&lua_host, &world_ref))
+    };
 
     let world = World {
       state: state,
