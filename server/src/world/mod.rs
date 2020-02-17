@@ -1,9 +1,9 @@
 mod actor;
-mod state;
+pub mod state;
 use self::actor::{ControlMessage, WorldActor};
 use crate::chat::{ChatSocket, ToClientMessage};
 use crate::lua::LuaHost;
-use crate::object::executor::{ExecutorCache, ObjectExecutor};
+use crate::object::executor::ObjectExecutor;
 use crate::object::types::Message;
 pub use crate::object::types::{Id, ObjectKind};
 use crate::util::WeakRw;
@@ -64,11 +64,11 @@ impl World {
   }
 
   pub fn reload_code(&mut self) {
-    self.actor.send(ControlMessage::ReloadCode);
+    self.actor.do_send(ControlMessage::ReloadCode);
   }
 
   pub fn send_message(&mut self, message: Message) {
-    self.actor.send(message);
+    self.actor.do_send(message);
   }
 
   pub fn send_client_message(&self, id: Id, message: ToClientMessage) {
@@ -109,11 +109,12 @@ impl World {
     let lua_host = LuaHost::new(lua_path).unwrap();
 
     let actor = WorldActor::new(&lua_host, &world_ref);
+    let addr = WorldActor::start_in_arbiter(&arbiter, |_ctx| actor);
 
     let world = World {
       state: state,
       arbiter: arbiter,
-      actor: WorldActor::start_in_arbiter(&arbiter, |_ctx| actor),
+      actor: addr,
       own_ref: world_ref.clone(),
       chat_connections: MultiMap::new(),
       lua_host: lua_host,

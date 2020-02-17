@@ -3,6 +3,7 @@ use crate::lua::PackageReference;
 use crate::lua::{LuaHost, SerializableValue};
 use crate::object::api;
 use crate::object::types::Message;
+use crate::world::state::State as WorldState;
 use crate::world::{Id, World, WorldRef};
 use rlua;
 use std::cell::RefCell;
@@ -32,7 +33,7 @@ impl ObjectExecutor {
       loaded_main: false,
     }
   }
-  
+
   pub fn run_for_object<'a, F, T>(
     &mut self,
     current_message: &'a Message,
@@ -52,7 +53,7 @@ impl ObjectExecutor {
     // this value only exists as long as this block.
     let wf = self.world_ref.clone();
     let result = EXECUTION_STATE.set(unsafe { make_static(&state) }, || {
-      let (state, loaded_main) = (self.lua_state, &mut self.loaded_main);
+      let (state, loaded_main) = (&self.lua_state, &mut self.loaded_main);
 
       match state {
         Ok(lua_state) => lua_state.context(|lua_ctx| {
@@ -77,7 +78,8 @@ impl ObjectExecutor {
       for write in state.writes.borrow().iter() {
         write.commit(w)
       }
-      w.get_state_mut().set_attrs(current_message.target, state.changed_attrs.borrow().clone())
+      w.get_state_mut()
+        .set_attrs(current_message.target, state.changed_attrs.borrow().clone())
     });
     result
   }
@@ -99,8 +101,7 @@ pub enum GlobalWrite {
     content: String,
   },
   SendMessage {
-    target: Id,
-    message: ObjectMessage,
+    message: Message,
   },
   SendClientMessage {
     target: Id,
@@ -109,7 +110,7 @@ pub enum GlobalWrite {
   InitializeObject {
     id: Id,
     parent: Option<Id>,
-    init_message: ObjectMessage,
+    init_message: Message,
   },
   MoveObject {
     child: Id,
@@ -125,10 +126,12 @@ impl GlobalWrite {
   pub fn commit(&self, world: &mut World) {
     match self {
       GlobalWrite::SetLocalPackageContent { package, content } => {
-        world.set_live_package_content(package.clone(), content.clone())
+        world
+          .get_state_mut()
+          .set_live_package_content(package.clone(), content.clone());
         world.reload_code(); // TODO: restrict to just this kind
       }
-      GlobalWrite::SendMessage { target, message } => world.send_message(*target, message.clone()),
+      GlobalWrite::SendMessage { message } => world.send_message(message.clone()),
       GlobalWrite::SendClientMessage { target, message } => {
         world.send_client_message(*target, message.clone())
       }
@@ -137,9 +140,8 @@ impl GlobalWrite {
         parent,
         init_message,
       } => {
-        world.finish_create_object(*id);
-        world.move_object(*id, *parent);
-        world.send_message(*id, init_message.clone())
+        world.get_state_mut().move_object(*id, *parent);
+        world.send_message(init_message.clone())
       }
       GlobalWrite::MoveObject {
         child,
@@ -148,27 +150,23 @@ impl GlobalWrite {
         sender,
         payload,
       } => {
-        world.move_object(*child, *new_parent);
-        world.send_message(
-          *child,
-          ObjectMessage {
-            original_user: *original_user,
-            immediate_sender: *sender,
-            name: "parent_changed".to_string(),
-            payload: payload.clone(),
-          },
-        );
+        world.get_state_mut().move_object(*child, *new_parent);
+        world.send_message(Message {
+          target: *child,
+          original_user: *original_user,
+          immediate_sender: *sender,
+          name: "parent_changed".to_string(),
+          payload: payload.clone(),
+        });
 
         new_parent.map(|p| {
-          world.send_message(
-            p,
-            ObjectMessage {
-              original_user: *original_user,
-              immediate_sender: *sender,
-              name: "child_added".to_string(),
-              payload: payload.clone(),
-            },
-          );
+          world.send_message(Message {
+            target: p,
+            original_user: *original_user,
+            immediate_sender: *sender,
+            name: "child_added".to_string(),
+            payload: payload.clone(),
+          });
         });
       }
     }
@@ -190,13 +188,6 @@ impl<'a> ExecutionState<'a> {
     EXECUTION_STATE.with(|s| body(s))
   }
 
-  pub(super) fn with_actor_state_mut<T, F>(body: F) -> T
-  where
-    F: FnOnce(&mut ObjectActorState) -> T,
-  {
-    Self::with_state(|s| body(&mut s.object_state.borrow_mut()))
-  }
-
   pub(super) fn add_write(write: GlobalWrite) {
     Self::with_state(|s| s.writes.borrow_mut().push(write))
   }
@@ -215,15 +206,29 @@ impl<'a> ExecutionState<'a> {
     Self::with_state(|s| s.world.read(|w| body(w)))
   }
 
-  pub(super) fn with_world_write<T, F>(body: F) -> T
+  pub(super) fn with_world_mut<T, F>(body: F) -> T
   where
     F: FnOnce(&mut World) -> T,
   {
     Self::with_state(|s| s.world.write(|w| body(w)))
   }
 
+  pub(super) fn with_world_state<T, F>(body: F) -> T
+  where
+    F: FnOnce(&WorldState) -> T,
+  {
+    Self::with_state(|s| s.world.read(|w| body(w.get_state())))
+  }
+
+  pub(super) fn with_world_state_mut<T, F>(body: F) -> T
+  where
+    F: FnOnce(&mut WorldState) -> T,
+  {
+    Self::with_state(|s| s.world.write(|w| body(w.get_state_mut())))
+  }
+
   pub(super) fn get_id() -> Id {
-    Self::with_state(|s| s.id)
+    Self::with_state(|s| s.current_message.target)
   }
 
   pub(super) fn get_original_user() -> Option<Id> {
@@ -236,38 +241,4 @@ scoped_thread_local! {static EXECUTION_STATE: ExecutionState}
 unsafe fn make_static<'a>(p: &'a ExecutionState<'a>) -> &'static ExecutionState<'static> {
   use std::mem;
   mem::transmute(p)
-}
-
-pub struct ExecutorCache {
-  // keep set of executors, plus a version number to discard outdated ones
-  current_generation: i64,
-  executors: Vec<ObjectExecutor>,
-}
-
-impl ExecutorCache {
-  pub fn new() -> ExecutorCache {
-    ExecutorCache {
-      current_generation: 0,
-      executors: Vec::new(),
-    }
-  }
-
-  pub fn update(&mut self) {
-    self.current_generation += 1;
-    self.executors.clear();
-  }
-
-  pub fn checkout_executor(&mut self, lua_host: &LuaHost) -> ObjectExecutor {
-    if let Some(executor) = self.executors.pop() {
-      executor
-    } else {
-      ObjectExecutor::new(&lua_host, self.current_generation)
-    }
-  }
-
-  pub fn checkin_executor(&mut self, executor: ObjectExecutor) {
-    if self.current_generation == executor.generation {
-      self.executors.push(executor)
-    }
-  }
 }

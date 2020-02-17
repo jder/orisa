@@ -5,7 +5,7 @@ use serde::*;
 use std::collections::HashMap;
 
 #[derive(Debug)]
-enum Error {
+pub enum Error {
   InvalidObjectId(Id),
 }
 
@@ -16,6 +16,12 @@ impl Display for Error {
     match self {
       Error::InvalidObjectId(id) => write!(f, "Invalid object Id {}", id),
     }
+  }
+}
+
+impl From<Error> for rlua::Error {
+  fn from(e: Error) -> rlua::Error {
+    rlua::Error::external(e)
   }
 }
 
@@ -73,14 +79,14 @@ impl State {
     id
   }
 
-  pub fn object(&self, id: Id) -> Result<&Object> {
+  fn object(&self, id: Id) -> Result<&Object> {
     self
       .objects
       .get(id.0)
       .ok_or_else(|| Error::InvalidObjectId(id))
   }
 
-  pub fn object_mut(&mut self, id: Id) -> Result<&mut Object> {
+  fn object_mut(&mut self, id: Id) -> Result<&mut Object> {
     self
       .objects
       .get_mut(id.0)
@@ -120,8 +126,8 @@ impl State {
       .objects
       .iter()
       .enumerate()
-      .filter(|(index, o)| o.parent == Some(id))
-      .map(|(index, o)| Id(index))
+      .filter(move |(_index, o)| o.parent == Some(id))
+      .map(|(index, _o)| Id(index))
   }
 
   // TODO: move to Object?
@@ -158,6 +164,23 @@ impl State {
       .map(|o| o.attrs.get(name).map(|v| v.clone()));
   }
 
+  pub fn set_state(
+    &mut self,
+    id: Id,
+    key: &str,
+    value: SerializableValue,
+  ) -> Result<Option<SerializableValue>> {
+    self
+      .object_mut(id)
+      .map(|o| o.state.insert(key.to_string(), value))
+  }
+
+  pub fn get_state(&self, id: Id, name: &str) -> Result<Option<SerializableValue>> {
+    return self
+      .object(id)
+      .map(|o| o.state.get(name).map(|v| v.clone()));
+  }
+
   pub fn move_object(&mut self, child: Id, new_parent: Option<Id>) -> Result<()> {
     self
       .object_mut(child)
@@ -165,6 +188,6 @@ impl State {
   }
 
   pub fn kind(&self, id: Id) -> Result<ObjectKind> {
-    Ok(self.object(id)?.kind)
+    Ok(self.object(id)?.kind.clone())
   }
 }

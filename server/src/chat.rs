@@ -97,7 +97,7 @@ impl ChatSocket {
     if self.self_id.is_none() {
       log::warn!("Got command when had no id")
     } else {
-      self.app_data.world_ref.read(|world| {
+      self.app_data.world_ref.write(|world| {
         world.send_message(Message {
           target: self.id(),
           original_user: Some(self.id()),

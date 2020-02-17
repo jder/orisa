@@ -1,28 +1,28 @@
 use crate::chat::{ChatRowContent, ToClientMessage};
 use crate::lua::*;
-use crate::object::actor::ObjectMessage;
 use crate::object::executor::{ExecutionState as S, GlobalWrite};
-use crate::object::types::{Id, ObjectKind};
+use crate::object::types::*;
 use rlua;
 use rlua::ExternalResult;
 use rlua::ToLua;
 use std::collections::HashMap;
 
 fn get_children(_lua_ctx: rlua::Context, object_id: Id) -> rlua::Result<Vec<Id>> {
-  Ok(S::with_world(|w| {
+  Ok(S::with_world_state(|w| {
     w.children(object_id).collect::<Vec<Id>>()
   }))
 }
 
 fn get_parent(_lua_ctx: rlua::Context, object_id: Id) -> rlua::Result<Option<Id>> {
-  Ok(S::with_world(|w| w.parent(object_id)))
+  Ok(S::with_world_state(|w| w.parent(object_id))?)
 }
 
 fn send(
   _lua_ctx: rlua::Context,
   (object_id, name, payload): (Id, String, SerializableValue),
 ) -> rlua::Result<()> {
-  let message = ObjectMessage {
+  let message = Message {
+    target: object_id,
     original_user: S::get_original_user(),
     immediate_sender: S::get_id(),
     name: name,
@@ -30,10 +30,7 @@ fn send(
   };
 
   // TODO: we could optimize this by sending directly if no other writes have happened yet
-  S::add_write(GlobalWrite::SendMessage {
-    target: object_id,
-    message: message,
-  });
+  S::add_write(GlobalWrite::SendMessage { message: message });
 
   Ok(())
 }
@@ -87,11 +84,11 @@ fn send_user_edit_file(
 }
 
 fn get_username(_lua_ctx: rlua::Context, id: Id) -> rlua::Result<Option<String>> {
-  Ok(S::with_world(|w| w.username(id)))
+  Ok(S::with_world_state(|w| w.username(id)))
 }
 
 fn get_kind(lua_ctx: rlua::Context, id: Id) -> rlua::Result<rlua::Value> {
-  S::with_world(|w| w.kind(id).to_lua(lua_ctx))
+  S::with_world_state(|w| w.kind(id)?.to_lua(lua_ctx))
 }
 
 fn set_state(
@@ -102,10 +99,7 @@ fn set_state(
     // Someday we might relax this given capabilities and probably containment (for concurrency)
     Err(rlua::Error::external("Can only set your own state."))
   } else {
-    Ok(
-      S::with_actor_state_mut(|s| s.persistent_state.insert(key, value))
-        .unwrap_or(SerializableValue::Nil),
-    )
+    Ok(S::with_world_state_mut(|s| s.set_state(id, &key, value))?.unwrap_or(SerializableValue::Nil))
   }
 }
 
@@ -114,12 +108,7 @@ fn get_state(_lua_ctx: rlua::Context, (id, key): (Id, String)) -> rlua::Result<S
     // Someday we might relax this given capabilities and probably containment (for concurrency)
     Err(rlua::Error::external("Can only get your own state."))
   } else {
-    Ok(S::with_actor_state_mut(|s| {
-      s.persistent_state
-        .get(&key)
-        .map(|v| v.clone())
-        .unwrap_or(SerializableValue::Nil)
-    }))
+    Ok(S::with_world_state(|s| s.get_state(id, &key))?.unwrap_or(SerializableValue::Nil))
   }
 }
 
@@ -133,7 +122,7 @@ fn set_attr(
   } else {
     Ok(
       S::with_changed_attrs(|changed_attrs| changed_attrs.insert(key.clone(), value))
-        .or_else(|| S::with_world(|w| w.get_attr(id, &key)))
+        .or_else(|| S::with_world_state(|w| w.get_attr(id, &key).expect("Error setting own attrs")))
         .unwrap_or(SerializableValue::Nil),
     )
   }
@@ -146,11 +135,14 @@ fn get_attr(_lua_ctx: rlua::Context, (id, key): (Id, String)) -> rlua::Result<Se
       return Ok(changed);
     }
   }
-  Ok(S::with_world(|w| w.get_attr(id, &key)).unwrap_or(SerializableValue::Nil))
+  Ok(
+    S::with_world_state(|w| w.get_attr(id, &key).expect("Error getting own attr"))
+      .unwrap_or(SerializableValue::Nil),
+  )
 }
 
 fn get_live_package_content(_lua_ctx: rlua::Context, name: String) -> rlua::Result<Option<String>> {
-  S::with_world(|w| {
+  S::with_world_state(|w| {
     PackageReference::new(&name)
       .map(|package| w.get_live_package_content(package).map(|s| s.clone()))
   })
@@ -164,7 +156,7 @@ fn send_save_live_package_content(
   let destination_package = PackageReference::new(&name).to_lua_err()?;
   let id = S::get_id();
 
-  if Some(destination_package.user().to_string()) == S::with_world(|w| w.username(id))
+  if Some(destination_package.user().to_string()) == S::with_world_state(|w| w.username(id))
     && destination_package.is_live_package()
   {
     S::add_write(GlobalWrite::SetLocalPackageContent {
@@ -188,12 +180,13 @@ fn create_object(
   _lua_ctx: rlua::Context,
   (parent, kind, created_payload): (Option<Id>, ObjectKind, SerializableValue),
 ) -> rlua::Result<Id> {
-  let id = S::with_world_write(|w| w.start_create_object(None, kind));
+  let id = S::with_world_state_mut(|w| w.create_object(kind));
 
   S::add_write(GlobalWrite::InitializeObject {
     id: id,
     parent: parent,
-    init_message: ObjectMessage {
+    init_message: Message {
+      target: id,
       original_user: S::get_original_user(),
       immediate_sender: S::get_id(),
       name: "created".to_string(),
@@ -212,17 +205,13 @@ fn send_move_object(
     return Err(rlua::Error::external("only an object can move itself"));
   }
 
-  // TODO: this boilerplate is horrible; surely we can do somethig nicer
+  // TODO: this boilerplate is horrible; surely we can do something nicer
+  // TODO: we probably want to build these at commit time so we can read old_parent
+  // and do whatever permission checks based on current location.
   let mut info: HashMap<String, SerializableValue> = HashMap::new();
   info.insert(
     "child".to_string(),
     SerializableValue::String(child.to_string()),
-  );
-  info.insert(
-    "old_parent".to_string(),
-    S::with_world(|w| w.parent(child))
-      .map(|p| SerializableValue::String(p.to_string()))
-      .unwrap_or(SerializableValue::Nil),
   );
   info.insert(
     "new_parent".to_string(),
@@ -249,7 +238,7 @@ fn print_override<'lua>(
   let (maybe_user_id, id, message_name) = S::with_state(|s| {
     (
       s.current_message.original_user,
-      s.id,
+      s.current_message.target,
       s.current_message.name.clone(),
     )
   });
@@ -296,7 +285,7 @@ fn require(lua_ctx: rlua::Context, package_name: String) -> rlua::Result<rlua::V
     let package_reference = PackageReference::new(&package_name).to_lua_err()?;
 
     let package = if package_reference.is_live_package() {
-      S::with_world(|w| {
+      S::with_world_state(|w| {
         let content = w
           .get_live_package_content(PackageReference::new(&package_name).to_lua_err()?)
           .ok_or(rlua::Error::external(format!(

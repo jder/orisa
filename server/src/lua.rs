@@ -24,7 +24,7 @@ impl LuaHost {
       | rlua::StdLib::UTF8
       | rlua::StdLib::MATH;
     let lua = rlua::Lua::new_with(libs);
-    lua.context(|lua_ctx| {
+    lua.context::<_, rlua::Result<()>>(|lua_ctx| {
       // remove some sensitive things, replace load with a string-only version
       lua_ctx.globals().set("dofile", rlua::Value::Nil)?;
       lua_ctx.globals().set("loadfile", rlua::Value::Nil)?;

@@ -45,7 +45,7 @@ impl actix::Handler<ControlMessage> for WorldActor {
 
   fn handle(&mut self, msg: ControlMessage, ctx: &mut actix::Context<Self>) {
     match msg {
-      ControlMessage => {
+      ControlMessage::ReloadCode => {
         log::info!("reloading code");
         self.executors = HashMap::new();
       }
@@ -62,14 +62,17 @@ impl WorldActor {
     }
   }
 
-  pub fn executor(&mut self, kind: PackageReference) -> &ObjectExecutor {
+  pub fn executor(&mut self, kind: PackageReference) -> &mut ObjectExecutor {
+    let host = &self.lua_host;
+    let wf = &self.world_ref;
+
     self
       .executors
       .entry(kind.clone())
-      .or_insert_with(|| ObjectExecutor::new(&self.lua_host, self.world_ref.clone()))
+      .or_insert_with(|| ObjectExecutor::new(host, wf.clone()))
   }
 
-  pub fn execute_message(&mut self, message: &Message) -> ResultAnyError<()> {
+  pub fn execute_message(&mut self, message: &Message) -> rlua::Result<()> {
     let kind = self
       .world_ref
       .read(|w| w.get_state().kind(message.target))?;
@@ -85,12 +88,10 @@ impl WorldActor {
       let main: rlua::Function = globals.get("main")?;
 
       main.call::<_, ()>((message.name.clone(), message.payload.clone()))
-    });
-
-    Ok(())
+    })
   }
 
-  fn report_error(&self, msg: &Message, err: &AnyError) {
+  fn report_error(&self, msg: &Message, err: &rlua::Error) {
     if let Some(user_id) = msg.original_user {
       self.world_ref.read(|w| {
         w.send_client_message(
