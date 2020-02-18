@@ -38,7 +38,7 @@ const InteractionPane = (props: {username: string}) => {
       });
     };
     setSocket(s);
-  }, [])
+  }, [props.username])
 
   const handleSubmit = (event: React.FormEvent) => {
     event.preventDefault();

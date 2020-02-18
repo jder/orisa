@@ -1,4 +1,4 @@
-import React, { useEffect, useLayoutEffect } from 'react';
+import React from 'react';
 import autoscroll from 'autoscroll-react';
 
 import { ChatRowContent } from './Messages';
