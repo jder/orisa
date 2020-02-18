@@ -190,7 +190,8 @@ fn send_save_live_package_content(
     S::with_world_state_mut(|s| {
       Ok(s.set_live_package_content(PackageReference::new(&name).to_lua_err()?, content))
     })?;
-    Ok(())
+    // TODO: reload only this package
+    S::with_world_mut(|w| Ok(w.reload_code()))
   } else {
     Err(rlua::Error::external(
       "You can only write to live packages named $username/live.something",
