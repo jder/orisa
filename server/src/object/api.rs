@@ -80,7 +80,6 @@ fn send_user_tell(_lua_ctx: rlua::Context, message: String) -> rlua::Result<()> 
 }
 
 fn send_user_tell_html(_lua_ctx: rlua::Context, html: String) -> rlua::Result<()> {
-  // TODO: we could optimize this by sending directly if no other writes have happened yet
   S::with_world_mut(|w| {
     Ok(w.send_client_message(
       S::get_id(),
@@ -92,7 +91,6 @@ fn send_user_tell_html(_lua_ctx: rlua::Context, html: String) -> rlua::Result<()
 }
 
 fn send_user_backlog(_lua_ctx: rlua::Context, messages: Vec<String>) -> rlua::Result<()> {
-  // TODO: we could optimize this by sending directly if no other writes have happened yet
   S::with_world_mut(|w| {
     Ok(w.send_client_message(
       S::get_id(),
@@ -107,7 +105,6 @@ fn send_user_edit_file(
   _lua_ctx: rlua::Context,
   (name, content): (String, String),
 ) -> rlua::Result<()> {
-  // TODO: we could optimize this by sending directly if no other writes have happened yet
   S::with_world_mut(|w| {
     Ok(w.send_client_message(
       S::get_id(),
