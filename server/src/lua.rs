@@ -9,6 +9,7 @@ use std::fmt;
 use std::fs::File;
 use std::io::Read;
 use std::path::{Path, PathBuf};
+use rlua::ToLua;
 
 #[derive(Clone)]
 pub struct LuaHost {
@@ -45,7 +46,7 @@ impl LuaHost {
       Option<String>,
       Option<rlua::Table<'lua>>,
     ),
-  ) -> rlua::Result<rlua::Function<'lua>> {
+  ) -> rlua::Result<(rlua::Value<'lua>, rlua::Value<'lua>)> {
     let text = match source {
       rlua::Value::String(s) => s.to_str()?.to_string(),
       rlua::Value::Function(f) => {
@@ -77,7 +78,10 @@ impl LuaHost {
       chunk = chunk.set_environment(e)?;
     }
 
-    chunk.into_function()
+    match chunk.into_function() {
+      Err(e) => Ok((rlua::Value::Nil, e.to_string().to_lua(lua_ctx)?)),
+      Ok(f) => Ok((rlua::Value::Function(f), rlua::Value::Nil))
+    }
   }
 
   // load a system (later other filesystem) package
