@@ -221,12 +221,27 @@ fn create_object(
   })
 }
 
-fn send_move_object(
+fn find_room(a: Id) -> rlua::Result<Id> {
+  let parent = S::with_world_state(|w| w.parent(a))?;
+  match parent {
+    None => Ok(a),
+    Some(p) => find_room(p)
+  }
+}
+
+fn shares_room(a: Id, b: Id) -> rlua::Result<bool> {
+  let room_a = find_room(a)?;
+  let room_b = find_room(b)?;
+  Ok(room_a == room_b)
+}
+
+fn move_object(
   _lua_ctx: rlua::Context,
   (child, new_parent): (Id, Option<Id>),
 ) -> rlua::Result<()> {
-  if child != S::get_id() {
-    return Err(rlua::Error::external("only an object can move itself"));
+  let sender = S::get_id();
+  if child != sender && !shares_room(child, sender)? {
+    return Err(rlua::Error::external("only something in the same room or the object itself can move an object"));
   }
 
   // TODO: this boilerplate is horrible; surely we can do something nicer
@@ -385,8 +400,8 @@ pub(super) fn register_api(lua_ctx: rlua::Context) -> rlua::Result<()> {
     lua_ctx.create_function(send_user_edit_file)?,
   )?;
   orisa.set(
-    "send_move_object",
-    lua_ctx.create_function(send_move_object)?,
+    "move_object",
+    lua_ctx.create_function(move_object)?,
   )?;
 
   orisa.set("get_children", lua_ctx.create_function(get_children)?)?;
