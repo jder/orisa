@@ -48,8 +48,9 @@ fn query(
     }
     if object_id == id {
       // TODO: lift this restriction once we can re-use executors or have a pool of them
+      // (Or call directly on lua_ctx with the new message state.)
       return Err(rlua::Error::external(
-        "You currently query yourself, sorry.",
+        "You currently can't query yourself, sorry.",
       ));
     }
     let result = s.actor.execute_query(&Message {
@@ -226,7 +227,7 @@ fn find_room(a: Id) -> rlua::Result<Id> {
   let parent = S::with_world_state(|w| w.parent(a))?;
   match parent {
     None => Ok(a),
-    Some(p) => find_room(p)
+    Some(p) => find_room(p),
   }
 }
 
@@ -236,13 +237,13 @@ fn shares_room(a: Id, b: Id) -> rlua::Result<bool> {
   Ok(room_a == room_b)
 }
 
-fn move_object(
-  _lua_ctx: rlua::Context,
-  (child, new_parent): (Id, Option<Id>),
-) -> rlua::Result<()> {
+fn move_object(_lua_ctx: rlua::Context, (child, new_parent): (Id, Option<Id>)) -> rlua::Result<()> {
   let sender = S::get_id();
+  // TODO: this check should move to a lua query on the child and/or new/old parent
   if child != sender && !shares_room(child, sender)? {
-    return Err(rlua::Error::external("only something in the same room or the object itself can move an object"));
+    return Err(rlua::Error::external(
+      "only something in the same room or the object itself can move an object",
+    ));
   }
 
   // TODO: this boilerplate is horrible; surely we can do something nicer
@@ -400,10 +401,7 @@ pub(super) fn register_api(lua_ctx: rlua::Context) -> rlua::Result<()> {
     "send_user_edit_file",
     lua_ctx.create_function(send_user_edit_file)?,
   )?;
-  orisa.set(
-    "move_object",
-    lua_ctx.create_function(move_object)?,
-  )?;
+  orisa.set("move_object", lua_ctx.create_function(move_object)?)?;
 
   orisa.set("get_children", lua_ctx.create_function(get_children)?)?;
   orisa.set("get_parent", lua_ctx.create_function(get_parent)?)?;
