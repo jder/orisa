@@ -140,7 +140,9 @@ impl Handler<ToClientMessage> for ChatSocket {
   type Result = ();
 
   fn handle(&mut self, msg: ToClientMessage, ctx: &mut ws::WebsocketContext<Self>) {
-    self.send_to_client(&msg, ctx).unwrap();
+    self
+      .send_to_client(&msg, ctx)
+      .unwrap_or_else(|e| log::error!("Error writing to client: {}", e))
   }
 }
 
