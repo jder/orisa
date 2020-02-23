@@ -170,15 +170,26 @@ fn get_attr(_lua_ctx: rlua::Context, (id, key): (Id, String)) -> rlua::Result<Se
   Ok(S::with_world_state(|w| w.get_attr(id, &key))?.unwrap_or(SerializableValue::Nil))
 }
 
-fn get_live_package_content(_lua_ctx: rlua::Context, name: String) -> rlua::Result<Option<String>> {
-  S::with_world_state(|w| {
-    PackageReference::new(&name)
-      .map(|package| w.get_live_package_content(package).map(|s| s.clone()))
-  })
-  .map_err(|e| rlua::Error::external(e))
+fn get_package_content(_lua_ctx: rlua::Context, name: String) -> rlua::Result<Option<String>> {
+  let package = PackageReference::new(&name).map_err(|e| rlua::Error::external(e))?;
+  if package.is_live_package() {
+    Ok(S::with_world_state(|w| {
+      w.get_live_package_content(package).map(|s| s.clone())
+    }))
+  } else {
+    S::with_world(|w| {
+      w.get_lua_host()
+        .filesystem_package_to_buf(&package)
+        .and_then(|v| {
+          String::from_utf8(v)
+            .map(|s| Some(s))
+            .map_err(|e| rlua::Error::external(e))
+        })
+    })
+  }
 }
 
-fn send_save_live_package_content(
+fn send_save_package_content(
   _lua_ctx: rlua::Context,
   (name, content): (String, String),
 ) -> rlua::Result<()> {
@@ -413,12 +424,12 @@ pub(super) fn register_api(lua_ctx: rlua::Context) -> rlua::Result<()> {
   orisa.set("get_attr", lua_ctx.create_function(get_attr)?)?;
 
   orisa.set(
-    "get_live_package_content",
-    lua_ctx.create_function(get_live_package_content)?,
+    "get_package_content",
+    lua_ctx.create_function(get_package_content)?,
   )?;
   orisa.set(
-    "send_save_live_package_content",
-    lua_ctx.create_function(send_save_live_package_content)?,
+    "send_save_package_content",
+    lua_ctx.create_function(send_save_package_content)?,
   )?;
 
   orisa.set("create_object", lua_ctx.create_function(create_object)?)?;

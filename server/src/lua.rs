@@ -3,13 +3,13 @@ use core::convert::TryFrom;
 use regex::Regex;
 use rlua;
 use rlua::ExternalResult;
+use rlua::ToLua;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fmt;
 use std::fs::File;
 use std::io::Read;
 use std::path::{Path, PathBuf};
-use rlua::ToLua;
 
 #[derive(Clone)]
 pub struct LuaHost {
@@ -80,7 +80,7 @@ impl LuaHost {
 
     match chunk.into_function() {
       Err(e) => Ok((rlua::Value::Nil, e.to_string().to_lua(lua_ctx)?)),
-      Ok(f) => Ok((rlua::Value::Function(f), rlua::Value::Nil))
+      Ok(f) => Ok((rlua::Value::Function(f), rlua::Value::Nil)),
     }
   }
 
@@ -90,21 +90,30 @@ impl LuaHost {
     lua_ctx: rlua::Context<'lua>,
     reference: &PackageReference,
   ) -> rlua::Result<rlua::Value<'lua>> {
-    assert!(reference.package_root() == PackageReference::system_package_root());
-
-    let name = reference.package();
-
-    let content = self
-      .system_package_root_to_buf(name)
-      .map_err(|e| rlua::Error::external(format!("Loading system package {}: {}", name, e)))?;
+    let content = self.filesystem_package_to_buf(reference)?;
     lua_ctx
       .load(&content)
       .set_name(&reference.to_string())?
       .eval()
       .map_err(|e| {
-        log::error!("Error loading system package {}: {}", name, e);
+        log::error!("Error loading package {}: {}", reference, e);
         e
       })
+  }
+
+  pub fn filesystem_package_to_buf(&self, reference: &PackageReference) -> rlua::Result<Vec<u8>> {
+    if reference.package_root() != PackageReference::system_package_root() {
+      return Err(rlua::Error::external(format!(
+        "Package {} is not a system package",
+        reference
+      )));
+    }
+
+    let name = reference.package();
+
+    self
+      .system_package_root_to_buf(name)
+      .map_err(|e| rlua::Error::external(format!("Loading package {}: {}", reference, e)))
   }
 
   // Supports loading modules out of the top level of the system directory
