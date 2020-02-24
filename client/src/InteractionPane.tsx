@@ -13,7 +13,7 @@ const InteractionPane = (props: {username: string}) => {
 
   useEffect(() => {
     const loc = document.location;
-    const protocol = loc.protocol === 'https' ? 'wss' : 'ws';
+    const protocol = loc.protocol === 'https:' ? 'wss' : 'ws';
     let s = new ChatSocket(`${protocol}://${loc.host}/api/socket`, props.username);
     s.onmessage = (message: ToClientMessage) => {
       setRows((prev) => {
