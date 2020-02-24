@@ -1,9 +1,13 @@
 import { ToServerMessage, ToClientMessage, LoginMessage } from './Messages';
 
+const MIN_TIMEOUT = 2_000;
+const MAX_TIMEOUT = 60_000;
+
 export class ChatSocket {
   private url: string;
   private ws: WebSocket;
   private username: string;
+  private next_timeout: number;
 
   onmessage?: (message: ToClientMessage) => void;
   buffer: ToServerMessage[] = [];
@@ -12,6 +16,7 @@ export class ChatSocket {
     this.url = url;
     this.ws = this.connect();
     this.username = username;
+    this.next_timeout = MIN_TIMEOUT;
   }
 
   private connect() {
@@ -27,10 +32,12 @@ export class ChatSocket {
       console.error("websocket error", event);
     }
     this.ws.onclose = (event: CloseEvent) => {
-      setTimeout(() => this.connect(), 5000);
+      setTimeout(() => this.connect(), this.next_timeout);
+      this.next_timeout = Math.min(this.next_timeout * 2, MAX_TIMEOUT);
     }
     this.ws.onopen = (event: Event) => {
       console.debug("websocket open");
+      this.next_timeout = MIN_TIMEOUT;
 
       this.send(new LoginMessage(this.username));
 

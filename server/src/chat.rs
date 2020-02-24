@@ -7,8 +7,10 @@ use actix_web_actors::ws;
 use serde::{Deserialize, Serialize};
 use serde_json;
 use std::collections::HashMap;
+use std::time::Duration;
 use uuid::Uuid;
 
+const HEARTBEAT_INTERVAL: Duration = Duration::from_secs(20);
 pub struct ChatSocket {
   app_data: web::Data<AppState>,
   self_id: Option<Id>,
@@ -17,8 +19,9 @@ pub struct ChatSocket {
 impl Actor for ChatSocket {
   type Context = ws::WebsocketContext<Self>;
 
-  fn started(&mut self, _ctx: &mut Self::Context) {
+  fn started(&mut self, ctx: &mut Self::Context) {
     log::info!("ChatSocket stared");
+    self.start_ping(ctx);
   }
 
   fn stopped(&mut self, ctx: &mut Self::Context) {
@@ -133,6 +136,12 @@ impl ChatSocket {
     let s = serde_json::to_string(message)?;
     ctx.text(s);
     Ok(())
+  }
+
+  fn start_ping(&mut self, ctx: &mut ws::WebsocketContext<ChatSocket>) {
+    ctx.run_interval(HEARTBEAT_INTERVAL, |_actor, ctx| {
+      ctx.ping(&[]);
+    });
   }
 }
 
