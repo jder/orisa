@@ -1,32 +1,6 @@
-
 .App {
-  width: 80%;
-  display: block;
-  margin: 100px auto;
-}
-
-.ChatHistory {
-  background-color: lightblue;
-  padding: 10px;
-  overflow-y: scroll;
-  height: 500px;
-}
-
-.ChatHistoryRow {
-  font-family: "Lucida Console", Monaco, monospace;
-  font-size: 10pt;
-}
-
-.ChatHistoryRow.text {
-  white-space: pre-wrap;
-}
-
-.echo {
-  color: grey;
-  font-style: italic;
-}
-
-.mainInput {
-  width: 80%; 
-  margin-top: 10px;
+  max-width: 1000px;
+  height: 100%;
+  margin: auto;
+  padding: 1em;
 }
