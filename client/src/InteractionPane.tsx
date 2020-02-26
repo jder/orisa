@@ -72,6 +72,11 @@ const InteractionPane = (props: {username: string}) => {
     }
   }
 
+  const handleEditClose = () => {
+    setEditFile(null);
+    mainInputRef.current.focus();
+  }
+
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.keyCode === 38) {
       // up arrow
@@ -85,7 +90,7 @@ const InteractionPane = (props: {username: string}) => {
     // the user is trying to select text!
     const selection = window.getSelection();
     if (selection && selection.type === 'Range') return;
-    mainInputRef.current.focus()
+    mainInputRef.current.focus();
   }
 
   return (
@@ -100,7 +105,7 @@ const InteractionPane = (props: {username: string}) => {
         <button onClick={handleReload}>Reload System Code</button>
       </div>
 
-      {editFile && <Editor editFile={editFile} onSave={handleEditSave} onChange={handleEditChange} /> }
+      {editFile && <Editor editFile={editFile} onSave={handleEditSave} onChange={handleEditChange} onClose={handleEditClose} /> }
     </div>
   );
 }
