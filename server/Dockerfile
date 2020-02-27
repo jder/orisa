@@ -3,6 +3,7 @@ WORKDIR /usr/src/orisa
 COPY . .
 RUN cargo install --path .
 
-FROM debian:buster
+FROM debian:buster-slim
+RUN apt-get update && apt-get install openssl
 COPY --from=builder /usr/local/cargo/bin/orisa /usr/local/bin/orisa
 CMD ["orisa"]
