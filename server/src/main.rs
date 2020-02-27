@@ -1,6 +1,7 @@
 mod chat;
 mod lua;
 mod object;
+mod repo;
 mod util;
 mod world;
 
@@ -71,6 +72,25 @@ async fn run_server() -> Result<(), std::io::Error> {
 
   // default to assuming killpop is checked out next to orisa
   let code_dir_env = env::var("ORISA_CODE_DIRECTORY").unwrap_or("../../killpop".to_string());
+  log::info!("Using code directory {}", code_dir_env);
+
+  let code_remote = env::var("ORISA_CODE_REMOTE").ok();
+  let code_branch = env::var("ORISA_CODE_BRANCH").ok();
+
+  let git_config = match (code_remote, code_branch) {
+    (Some(remote), Some(branch)) => {
+      log::info!(
+        "Configured to pull system code from {} -> {}",
+        remote,
+        branch
+      );
+      Some(repo::Repo::new(&Path::new(&code_dir_env), remote, branch))
+    }
+    _ => {
+      log::info!("Not configured to pull system code");
+      None
+    }
+  };
 
   let path = world_load_path();
   let read = if path.exists() {
@@ -80,7 +100,7 @@ async fn run_server() -> Result<(), std::io::Error> {
   };
 
   let (_world, world_ref) =
-    World::new(&arbiter, &Path::new(&code_dir_env), read).expect("error loading world");
+    World::new(&arbiter, &Path::new(&code_dir_env), git_config, read).expect("error loading world");
 
   let data = web::Data::new(AppState {
     world_ref: world_ref.clone(),

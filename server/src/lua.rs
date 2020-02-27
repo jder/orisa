@@ -1,5 +1,7 @@
+use crate::repo::Repo;
 use crate::util::*;
 use core::convert::TryFrom;
+use git2;
 use regex::Regex;
 use rlua;
 use rlua::ExternalResult;
@@ -10,10 +12,10 @@ use std::fmt;
 use std::fs::File;
 use std::io::Read;
 use std::path::{Path, PathBuf};
-
 #[derive(Clone)]
 pub struct LuaHost {
   root: PathBuf,
+  repo: Option<Repo>,
 }
 
 impl LuaHost {
@@ -137,10 +139,11 @@ impl LuaHost {
     }
   }
 
-  pub fn new(root: &Path) -> std::io::Result<LuaHost> {
+  pub fn new(root: &Path, repo: Option<Repo>) -> std::io::Result<LuaHost> {
     let canonical_root = root.to_path_buf().canonicalize()?;
     Ok(LuaHost {
       root: canonical_root.clone(),
+      repo,
     })
   }
 
@@ -149,6 +152,14 @@ impl LuaHost {
     let mut v: Vec<u8> = vec![];
     f.read_to_end(&mut v)?;
     Ok(v)
+  }
+
+  pub fn fetch(&self) -> Result<String, git2::Error> {
+    self
+      .repo
+      .as_ref()
+      .map(|repo| repo.pull_latest())
+      .unwrap_or(Ok("Not updating from git.".to_string()))
   }
 }
 

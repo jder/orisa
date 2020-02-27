@@ -45,7 +45,7 @@ impl actix::Handler<ControlMessage> for WorldActor {
   fn handle(&mut self, msg: ControlMessage, _ctx: &mut actix::Context<Self>) {
     match msg {
       ControlMessage::ReloadCode => {
-        log::info!("reloading code");
+        log::info!("clearing executor cache for code reload");
         self.executors = HashMap::new();
       }
     }

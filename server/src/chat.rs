@@ -113,11 +113,18 @@ impl ChatSocket {
   }
 
   fn handle_reload(&self, ctx: &mut ws::WebsocketContext<Self>) {
-    self.app_data.world_ref.write(|world| world.reload_code());
+    let message = match self
+      .app_data
+      .world_ref
+      .write(|world| world.pull_and_reload_code())
+    {
+      Err(e) => format!("Failed to reload: {}", e),
+      Ok(message) => format!("Reloaded code: {}", message),
+    };
     self
       .send_to_client(
         &ToClientMessage::Tell {
-          content: ChatRowContent::new(&format!("Reloaded")),
+          content: ChatRowContent::new(&message),
         },
         ctx,
       )

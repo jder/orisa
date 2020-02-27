@@ -5,9 +5,11 @@ use crate::chat::{ChatSocket, ToClientMessage};
 use crate::lua::LuaHost;
 use crate::object::types::Message;
 pub use crate::object::types::{Id, ObjectKind};
+use crate::repo;
 use crate::util::WeakRw;
 use actix;
 use actix::Actor;
+use git2;
 use multimap::MultiMap;
 use serde::{Deserialize, Serialize};
 use serde_json;
@@ -52,6 +54,12 @@ impl World {
     &self.state
   }
 
+  pub fn pull_and_reload_code(&mut self) -> Result<String, git2::Error> {
+    let result = self.lua_host.fetch()?;
+    self.reload_code();
+    Ok(result)
+  }
+
   pub fn reload_code(&mut self) {
     self.actor.do_send(ControlMessage::ReloadCode);
   }
@@ -81,6 +89,7 @@ impl World {
   pub fn new(
     arbiter: &actix::Arbiter,
     lua_path: &std::path::Path,
+    git_config: Option<repo::Repo>,
     from: Option<impl Read>,
   ) -> Result<(Arc<RwLock<Option<World>>>, WorldRef), serde_json::error::Error> {
     let arc = Arc::new(RwLock::new(None));
@@ -95,7 +104,7 @@ impl World {
       }
     };
 
-    let lua_host = LuaHost::new(lua_path).unwrap();
+    let lua_host = LuaHost::new(lua_path, git_config).unwrap();
 
     let addr = {
       let lua_host = lua_host.clone();

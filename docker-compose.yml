@@ -16,4 +16,6 @@ services:
     environment:
       - ORISA_STATE_DIRECTORY=/state
       - ORISA_CODE_DIRECTORY=/code
+      - ORISA_CODE_REMOTE=origin
+      - ORISA_CODE_BRANCH=master
       - RUST_LOG=INFO
