@@ -12,7 +12,7 @@ services:
       - 8080
     volumes:
       - ./server/state:/state
-      - ../killpop:/code:ro
+      - ../killpop:/code
     environment:
       - ORISA_STATE_DIRECTORY=/state
       - ORISA_CODE_DIRECTORY=/code
