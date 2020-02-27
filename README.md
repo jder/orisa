@@ -4,7 +4,7 @@ A quick hack building a Lua-based MOO in Rust with a React UI.
 
 ## Running Locally
 
-* Clone `killpop` next to `orisa`. 
+* Clone [killpop](https://github.com/jder/killpop) next to `orisa`. 
 
 * Install Yarn.
 * Install rustup.
@@ -17,5 +17,4 @@ A quick hack building a Lua-based MOO in Rust with a React UI.
 
 * Clone `killpop` next to `orisa`. 
 * `docker-compose up --build` will build & run two containers and expose on port 8080.
-
-Note that the config and dockerfiles are aimed at production use, not development.
+   Note that the config and dockerfiles are aimed at production use, not development.
