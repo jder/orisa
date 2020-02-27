@@ -1,5 +1,6 @@
 import React from 'react';
 import MonacoEditor from 'react-monaco-editor';
+import './Editor.css';
 
 export type EditFile = {
   name: string,
@@ -10,9 +11,11 @@ type SaveCallback = () => void;
 
 type ChangeCallback = (content: string) => void;
 
-const Editor = (props: {editFile: EditFile, onSave: SaveCallback, onChange: ChangeCallback}) => {
+type CloseCallback = () => void;
+
+const Editor = (props: {editFile: EditFile, onSave: SaveCallback, onChange: ChangeCallback, onClose: CloseCallback}) => {
   
-    const { editFile, onSave, onChange } = props;
+    const { editFile, onSave, onChange, onClose } = props;
 
     const options = {
       selectOnLineNumbers: true
@@ -24,11 +27,13 @@ const Editor = (props: {editFile: EditFile, onSave: SaveCallback, onChange: Chan
 
     return (
       <div className="Editor">
-        <div className="header">Editing file {editFile.name}</div>
-        <button onClick={onSave}>Save</button>
+        <div className="header">
+          <h2>Editing file <strong>{editFile.name}</strong></h2>
+          <button onClick={onSave}>Save</button>
+          <button className="close" onClick={onClose}>Cancel</button>
+        </div>
         <MonacoEditor
-          width="800"
-          height="600"
+          height="100%"
           language="lua"
           theme="vs-dark"
           value={editFile.content}

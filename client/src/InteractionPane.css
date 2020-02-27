@@ -1,0 +1,44 @@
+.InteractionPane {
+    height: 100%;
+    display: flex;
+    flex-direction: column;  
+}
+
+.ChatHistory {
+  background-color: lightblue;
+  padding: 10px;
+  overflow-y: scroll;
+  flex: 1;
+}
+  
+  .ChatHistoryRow, .input-bar, .mainInput, .input-bar button {
+    font-family: "Lucida Console", Monaco, monospace;
+    font-size: 10pt;
+  }
+  
+  .ChatHistoryRow.text {
+    white-space: pre-wrap;
+  }
+  
+  .echo {
+    color: grey;
+  }
+  .echo::before {
+      content: "> ";
+  }
+  
+  .input-bar {
+      display: flex;
+      flex-direction: row;
+      background-color: lightblue;
+  }
+  .input-bar .mainInput {
+      flex: 1;
+      border: 0;
+      outline: 0;
+      background: transparent;
+  }
+  .input-bar button {
+      flex: 0 0 auto;
+  }
+  

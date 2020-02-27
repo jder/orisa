@@ -2,7 +2,8 @@ import React, { useState, useEffect } from 'react';
 import ChatHistory from './ChatHistory';
 import { ToClientMessage, isTellMessage, isBacklogMessage, ChatRowContent, CommandMessage, ReloadCodeMessage, isLogMessage, SaveFileMessage, isEditFileMessage } from './Messages';
 import { ChatSocket } from './ChatSocket';
-import Editor, { EditFile } from './Editor'; 
+import Editor, { EditFile } from './Editor';
+import './InteractionPane.css';
 
 const InteractionPane = (props: {username: string}) => {
   const [text, setText] = useState("");
@@ -10,6 +11,8 @@ const InteractionPane = (props: {username: string}) => {
   const [rows, setRows] = useState([] as ChatRowContent[]);
   const [socket, setSocket] = useState(null as ChatSocket | null);
   const [editFile, setEditFile] = useState(null as EditFile | null);
+
+  const mainInputRef:any = React.createRef();
 
   useEffect(() => {
     const loc = document.location;
@@ -69,6 +72,11 @@ const InteractionPane = (props: {username: string}) => {
     }
   }
 
+  const handleEditClose = () => {
+    setEditFile(null);
+    mainInputRef.current.focus();
+  }
+
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.keyCode === 38) {
       // up arrow
@@ -77,15 +85,27 @@ const InteractionPane = (props: {username: string}) => {
     }
   }
 
+  const handleHistoryClick = (e: React.MouseEvent) => {
+    // if the user clicks the chat history, focus the input box, UNLESS
+    // the user is trying to select text!
+    const selection = window.getSelection();
+    if (selection && selection.type === 'Range') return;
+    mainInputRef.current.focus();
+  }
+
   return (
     <div className="InteractionPane">
-      <ChatHistory rows={rows} /> 
-      <form onSubmit={handleSubmit}>
-        <input className="mainInput" autoFocus type="text" value={text} onChange={handleChange} onKeyDown={handleKeyDown} />
+      <ChatHistory rows={rows} onClick={handleHistoryClick} /> 
+      <form className="input-bar" onSubmit={handleSubmit}>
+        <div>&gt;&emsp;</div>
+        <input className="mainInput" autoFocus type="text" value={text} onChange={handleChange} onKeyDown={handleKeyDown} ref={mainInputRef} />
         <input type="submit" disabled={!socket} value="Send" />
       </form>
-      <button onClick={handleReload}>Reload System Code</button>
-      {editFile && <Editor editFile={editFile} onSave={handleEditSave} onChange={handleEditChange} /> }
+      <div className="tool-bar">
+        <button onClick={handleReload}>Reload System Code</button>
+      </div>
+
+      {editFile && <Editor editFile={editFile} onSave={handleEditSave} onChange={handleEditChange} onClose={handleEditClose} /> }
     </div>
   );
 }

@@ -1,0 +1,21 @@
+.Editor {
+    flex: 1;
+}
+
+.Editor .header {
+    background: black;
+    color: white;
+    display: flex;
+    flex-direction: row;
+}
+
+.Editor .header h2 {
+    font-size: 11pt;
+    flex: 1;
+    margin: 2px 10px;
+    font-weight: normal;
+}
+
+.Editor .header button:last-child {
+    margin-left: 1em;
+}
