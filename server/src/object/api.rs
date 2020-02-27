@@ -69,36 +69,30 @@ fn query(
   })
 }
 
-fn send_user_tell(_lua_ctx: rlua::Context, message: String) -> rlua::Result<()> {
+fn send_user_tell_html(_lua_ctx: rlua::Context, message: String) -> rlua::Result<()> {
   S::with_world_mut(|w| {
     Ok(w.send_client_message(
       S::get_id(),
       ToClientMessage::Tell {
-        content: ChatRowContent::new(&message),
+        content: ChatRowContent::new_html(&message),
       },
     ))
   })
 }
 
-fn send_user_tell_html(_lua_ctx: rlua::Context, html: String) -> rlua::Result<()> {
+fn send_user_backlog_html(_lua_ctx: rlua::Context, messages: Vec<String>) -> rlua::Result<()> {
   S::with_world_mut(|w| {
-    Ok(w.send_client_message(
-      S::get_id(),
-      ToClientMessage::Tell {
-        content: ChatRowContent::new_html(&html),
-      },
-    ))
-  })
-}
-
-fn send_user_backlog(_lua_ctx: rlua::Context, messages: Vec<String>) -> rlua::Result<()> {
-  S::with_world_mut(|w| {
-    Ok(w.send_client_message(
-      S::get_id(),
-      ToClientMessage::Backlog {
-        history: messages.iter().map(|s| ChatRowContent::new(s)).collect(),
-      },
-    ))
+    Ok(
+      w.send_client_message(
+        S::get_id(),
+        ToClientMessage::Backlog {
+          history: messages
+            .iter()
+            .map(|s| ChatRowContent::new_html(s))
+            .collect(),
+        },
+      ),
+    )
   })
 }
 
@@ -399,14 +393,13 @@ pub(super) fn register_api(lua_ctx: rlua::Context) -> rlua::Result<()> {
 
   orisa.set("send", lua_ctx.create_function(send)?)?;
   orisa.set("query", lua_ctx.create_function(query)?)?;
-  orisa.set("send_user_tell", lua_ctx.create_function(send_user_tell)?)?;
   orisa.set(
     "send_user_tell_html",
     lua_ctx.create_function(send_user_tell_html)?,
   )?;
   orisa.set(
-    "send_user_backlog",
-    lua_ctx.create_function(send_user_backlog)?,
+    "send_user_backlog_html",
+    lua_ctx.create_function(send_user_backlog_html)?,
   )?;
   orisa.set(
     "send_user_edit_file",
