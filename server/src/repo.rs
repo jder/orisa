@@ -39,16 +39,43 @@ impl Repo {
     let mut options = git2::FetchOptions::new();
     options.remote_callbacks(callbacks);
     remote.fetch(&[&self.branch_name], Some(&mut options), None)?;
-    let branch = repo.find_branch(&self.branch_name, git2::BranchType::Local)?;
+    let mut branch = repo.find_branch(&self.branch_name, git2::BranchType::Local)?;
     let commit = branch.upstream()?.get().peel_to_commit()?;
+
+    let description = format!("{} ({})", commit.id(), commit.summary().unwrap_or(""));
+
+    if commit.id() == branch.get().peel_to_commit()?.id() {
+      Ok(format!("Already at {}", description))
+    } else {
+      self.move_to(&mut branch, &repo, &commit)?;
+
+      Ok(format!("Updated to {}", description))
+    }
+  }
+
+  pub fn move_to(
+    &self,
+    branch: &mut git2::Branch,
+    repo: &git2::Repository,
+    commit: &git2::Commit,
+  ) -> Result<(), git2::Error> {
+    // This seems like the wrong order (first we checkout the content, then update the branch)
+    // but otherwise this doesn't work -- if you move the branch first, any changes appear
+    // "dirty" to the checkout_* functions and so the default "safe" mode refuses to update them.
+    // The alternative is to use "force" mode but this is scary if you *do* have changes.
+    repo.checkout_tree(
+      commit.as_object(),
+      Some(
+        git2::build::CheckoutBuilder::new()
+          .recreate_missing(true)
+          .remove_untracked(true),
+      ),
+    )?;
+
     branch
-      .into_reference()
+      .get_mut()
       .set_target(commit.id(), "orisa automatic update")?;
-    repo.checkout_head(None)?;
-    Ok(format!(
-      "Updated to {} ({})",
-      commit.id(),
-      commit.summary().unwrap_or("")
-    ))
+
+    Ok(())
   }
 }
