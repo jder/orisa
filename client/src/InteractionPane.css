@@ -16,7 +16,7 @@
     font-size: 10pt;
   }
   
-  .ChatHistoryRow.text {
+  .ChatHistoryRow .text {
     white-space: pre-wrap;
   }
   
