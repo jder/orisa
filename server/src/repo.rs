@@ -65,11 +65,7 @@ impl Repo {
     // The alternative is to use "force" mode but this is scary if you *do* have changes.
     repo.checkout_tree(
       commit.as_object(),
-      Some(
-        git2::build::CheckoutBuilder::new()
-          .recreate_missing(true)
-          .remove_untracked(true),
-      ),
+      Some(git2::build::CheckoutBuilder::new().recreate_missing(true)),
     )?;
 
     branch

@@ -159,7 +159,7 @@ impl LuaHost {
       .repo
       .as_ref()
       .map(|repo| repo.pull_latest())
-      .unwrap_or(Ok("Not updating from git.".to_string()))
+      .unwrap_or(Ok("Git content unfetched.".to_string()))
   }
 }
 
