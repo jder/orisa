@@ -6,6 +6,7 @@ services:
       - 8080:80
     links:
       - backend
+    restart: always
   backend:
     build: server
     ports:
@@ -19,3 +20,4 @@ services:
       - ORISA_CODE_REMOTE=origin
       - ORISA_CODE_BRANCH=master
       - RUST_LOG=INFO
+    restart: always

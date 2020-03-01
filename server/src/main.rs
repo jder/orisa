@@ -18,6 +18,7 @@ use log::info;
 use std::env;
 use std::fs::{copy, rename, File};
 use std::path::{Path, PathBuf};
+use std::sync::{Arc, RwLock};
 
 #[macro_use]
 extern crate scoped_tls;
@@ -41,9 +42,21 @@ async fn socket(
 fn main() -> Result<(), std::io::Error> {
   env_logger::init();
 
-  let res = actix_rt::System::new("main").block_on(run_server());
+  let mut system = actix_rt::System::builder()
+    .name("main")
+    .stop_on_panic(true)
+    .build();
 
-  info!("Stopping");
+  // This reference to _world keeps it alive
+  let (_world, world_ref) = build_world()?;
+
+  let res = system.block_on(run_server(world_ref.clone()));
+
+  info!("Saving world before stop");
+
+  save_world(world_ref.clone()).expect("Failed to save world");
+
+  info!("Save complete");
 
   res
 }
@@ -67,7 +80,7 @@ fn save_world(world_ref: WorldRef) -> ResultAnyError<()> {
   Ok(())
 }
 
-async fn run_server() -> Result<(), std::io::Error> {
+fn build_world() -> Result<(Arc<RwLock<Option<World>>>, WorldRef), std::io::Error> {
   let arbiter = Arbiter::new();
 
   // default to assuming killpop is checked out next to orisa
@@ -99,9 +112,12 @@ async fn run_server() -> Result<(), std::io::Error> {
     None
   };
 
-  let (_world, world_ref) =
-    World::new(&arbiter, &Path::new(&code_dir_env), git_config, read).expect("error loading world");
+  Ok(
+    World::new(&arbiter, &Path::new(&code_dir_env), git_config, read).expect("error loading world"),
+  )
+}
 
+async fn run_server(world_ref: WorldRef) -> Result<(), std::io::Error> {
   let data = web::Data::new(AppState {
     world_ref: world_ref.clone(),
   });
@@ -131,8 +147,6 @@ async fn run_server() -> Result<(), std::io::Error> {
   let srv = running.clone();
   ctrlc::set_handler(move || {
     info!("Asking for stop!");
-    let _ =
-      save_world(world_ref.clone()).map_err(|err| log::error!("Failed to save world: {}", err));
     executor::block_on(srv.stop(true));
   })
   .expect("Error setting Ctrl-C handler");
