@@ -1,5 +1,4 @@
-use crate::lua::LuaHost;
-use crate::lua::PackageReference;
+use crate::lua::{LuaHost, PackageReference, SerializableValue};
 use crate::object::api;
 use crate::object::types::Message;
 use crate::world::actor::WorldActor;
@@ -19,14 +18,12 @@ struct ObjectExecutorBody {
   // We use a Result here so that if this fails to initialize, it will
   // produce the init error when someone tries to use this executor
   lua_state: rlua::Result<rlua::Lua>,
-  loaded_main: bool,
 }
 
 impl ObjectExecutorBody {
   fn new(lua_state: rlua::Result<rlua::Lua>) -> Rc<RefCell<ObjectExecutorBody>> {
     Rc::new(RefCell::new(ObjectExecutorBody {
       lua_state: lua_state,
-      loaded_main: false,
     }))
   }
 }
@@ -47,6 +44,20 @@ impl ObjectExecutor {
     }
   }
 
+  pub fn run_main<'a>(
+    &self,
+    actor: &mut WorldActor,
+    message: &'a Message,
+    is_query: bool,
+  ) -> rlua::Result<SerializableValue> {
+    self.run_for_object(actor, message, is_query, |lua_ctx| {
+      ExecutionState::with_state(|s| s.set_globals(&lua_ctx))?;
+      let globals = lua_ctx.globals();
+      let main: rlua::Function = globals.get("main")?;
+      main.call::<_, SerializableValue>((message.name.clone(), message.payload.clone()))
+    })
+  }
+
   pub fn run_for_object<'a, F, T>(
     &self,
     actor: &mut WorldActor,
@@ -62,6 +73,7 @@ impl ObjectExecutor {
       actor: actor,
       world: self.world_ref.clone(),
       in_query: is_query,
+      executor: self,
     });
 
     // This is a gross hack but is safe since the scoped thread local ensures
@@ -70,18 +82,18 @@ impl ObjectExecutor {
     EXECUTION_STATE.set(unsafe { make_static(&state) }, || {
       let ObjectExecutorBody {
         lua_state: ref state,
-        ref mut loaded_main,
-      } = *self.body.borrow_mut();
+      } = *self.body.borrow();
 
       match state {
         Ok(lua_state) => lua_state.context(|lua_ctx| {
-          if !*loaded_main {
+          let globals = lua_ctx.globals();
+          let main: Option<rlua::Function> = globals.get("main")?;
+          if main.is_none() {
             // we try loading first so we we re-try on failures to produce the error again
             wf.read(|w| {
               w.get_lua_host()
                 .load_filesystem_package(lua_ctx, &PackageReference::main_package())
             })?;
-            *loaded_main = true;
           }
           body(lua_ctx)
         }),
@@ -99,9 +111,20 @@ pub(super) struct ExecutionState<'a> {
   pub(super) actor: &'a mut WorldActor,
   world: WorldRef,
   pub(super) in_query: bool,
+  pub(super) executor: &'a ObjectExecutor,
 }
 
 impl<'a> ExecutionState<'a> {
+  pub(super) fn set_globals(&self, lua_ctx: &rlua::Context) -> rlua::Result<()> {
+    let message = self.current_message;
+    let globals = lua_ctx.globals();
+    let orisa: rlua::Table = globals.get("orisa")?;
+    orisa.set("self", message.target)?;
+    orisa.set("sender", message.immediate_sender)?;
+    orisa.set("original_user", message.original_user)?;
+    Ok(())
+  }
+
   pub(super) fn with_state<T, F>(body: F) -> T
   where
     F: FnOnce(&ExecutionState) -> T,

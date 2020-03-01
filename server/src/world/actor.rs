@@ -78,13 +78,8 @@ impl WorldActor {
       .read(|w| w.get_state().kind(message.target))?;
 
     let executor = self.executor(kind);
-
-    executor.run_for_object(self, &message, false, |lua_ctx| {
-      WorldActor::set_globals_for_message(&lua_ctx, message)?;
-      let globals = lua_ctx.globals();
-      let main: rlua::Function = globals.get("main")?;
-      main.call::<_, ()>((message.name.clone(), message.payload.clone()))
-    })
+    executor.run_main(self, &message, false)?;
+    Ok(())
   }
 
   pub fn execute_query(&mut self, message: &Message) -> rlua::Result<SerializableValue> {
@@ -93,22 +88,7 @@ impl WorldActor {
       .read(|w| w.get_state().kind(message.target))?;
 
     let executor = self.executor(kind);
-
-    executor.run_for_object(self, &message, true, |lua_ctx| {
-      WorldActor::set_globals_for_message(&lua_ctx, message)?;
-      let globals = lua_ctx.globals();
-      let main: rlua::Function = globals.get("main")?;
-      main.call::<_, SerializableValue>((message.name.clone(), message.payload.clone()))
-    })
-  }
-
-  pub fn set_globals_for_message(lua_ctx: &rlua::Context, message: &Message) -> rlua::Result<()> {
-    let globals = lua_ctx.globals();
-    let orisa: rlua::Table = globals.get("orisa")?;
-    orisa.set("self", message.target)?;
-    orisa.set("sender", message.immediate_sender)?;
-    orisa.set("original_user", message.original_user)?;
-    Ok(())
+    executor.run_main(self, &message, true)
   }
 
   fn report_error(&self, msg: &Message, err: &rlua::Error) {

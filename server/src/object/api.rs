@@ -2,7 +2,6 @@ use crate::chat::{ChatRowContent, ToClientMessage};
 use crate::lua::*;
 use crate::object::executor::ExecutionState as S;
 use crate::object::types::*;
-use crate::world::actor::WorldActor;
 use rlua;
 use rlua::ExternalResult;
 use rlua::ToLua;
@@ -37,32 +36,39 @@ fn query(
   lua_ctx: rlua::Context,
   (object_id, name, payload): (Id, String, SerializableValue),
 ) -> rlua::Result<SerializableValue> {
-  S::with_state_mut(|s| {
-    let id = s.current_message.target;
+  let id = S::get_id();
+  let matching_kind = S::with_world_state::<rlua::Result<bool>, _>(|s| {
+    let kind = s.kind(id)?;
+    let target_kind = s.kind(object_id)?;
+    Ok(kind == target_kind)
+  })?;
 
+  S::with_state_mut(|s| {
     if s.in_query {
       // TODO: lift this restriction once we can re-use executors or have a pool of them
       return Err(rlua::Error::external(
         "You currently can't run a query from a query, sorry.",
       ));
     }
-    if object_id == id {
-      // TODO: lift this restriction once we can re-use executors or have a pool of them
-      // (Or call directly on lua_ctx with the new message state.)
-      return Err(rlua::Error::external(
-        "You currently can't query yourself, sorry.",
-      ));
-    }
-    let result = s.actor.execute_query(&Message {
+
+    let query_message = Message {
       target: object_id,
       immediate_sender: id,
       original_user: s.current_message.original_user,
       name: name.clone(),
       payload: payload.clone(),
-    });
+    };
+
+    let result = if matching_kind {
+      // we use the same executor here, so just run the main
+      s.executor.run_main(s.actor, &query_message, true)
+    } else {
+      // actor is in charge of finding the right executor
+      s.actor.execute_query(&query_message)
+    };
 
     // Restore current message before returning control to the caller
-    WorldActor::set_globals_for_message(&lua_ctx, s.current_message)
+    s.set_globals(&lua_ctx)
       .expect("Unable to restore previous globals");
 
     result
