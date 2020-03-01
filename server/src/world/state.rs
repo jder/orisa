@@ -7,6 +7,7 @@ use std::collections::HashMap;
 #[derive(Debug)]
 pub enum Error {
   InvalidObjectId(Id),
+  CyclicHierarchy { child: Id, parent: Id },
 }
 
 impl std::error::Error for Error {}
@@ -15,6 +16,11 @@ impl Display for Error {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::result::Result<(), std::fmt::Error> {
     match self {
       Error::InvalidObjectId(id) => write!(f, "Invalid object Id {}", id),
+      Error::CyclicHierarchy { child, parent } => write!(
+        f,
+        "Moving child {} to parent {} causes a cycle",
+        child, parent
+      ),
     }
   }
 }
@@ -184,7 +190,24 @@ impl State {
       .map(|o| o.state.get(name).map(|v| v.clone()));
   }
 
+  fn causes_cycle(&self, child: Id, new_parent: Id) -> Result<bool> {
+    if child == new_parent {
+      Ok(true)
+    } else {
+      match self.object(new_parent)?.parent {
+        None => Ok(false),
+        Some(grandparent) => self.causes_cycle(child, grandparent),
+      }
+    }
+  }
+
   pub fn move_object(&mut self, child: Id, new_parent: Option<Id>) -> Result<()> {
+    if let Some(p) = new_parent {
+      if self.causes_cycle(child, p)? {
+        return Err(Error::CyclicHierarchy { child, parent: p });
+      }
+    }
+
     self
       .object_mut(child)
       .map(|child| child.parent = new_parent)
