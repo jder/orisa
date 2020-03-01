@@ -234,6 +234,17 @@ fn create_object(
   })
 }
 
+fn get_all_users(_lua_ctx: rlua::Context, _: ()) -> rlua::Result<SerializableValue> {
+  S::with_world_state(|w| {
+    Ok(SerializableValue::Dict(
+      w.get_all_users()
+        .iter()
+        .map(|(k, v)| (k.clone(), SerializableValue::String(v.to_string())))
+        .collect(),
+    ))
+  })
+}
+
 fn find_room(a: Id) -> rlua::Result<Id> {
   let parent = S::with_world_state(|w| w.parent(a))?;
   match parent {
@@ -415,6 +426,7 @@ pub(super) fn register_api(lua_ctx: rlua::Context) -> rlua::Result<()> {
 
   orisa.set("get_children", lua_ctx.create_function(get_children)?)?;
   orisa.set("get_parent", lua_ctx.create_function(get_parent)?)?;
+  orisa.set("get_all_users", lua_ctx.create_function(get_all_users)?)?;
   orisa.set("get_username", lua_ctx.create_function(get_username)?)?;
   orisa.set("get_kind", lua_ctx.create_function(get_kind)?)?;
   orisa.set("set_state", lua_ctx.create_function(set_state)?)?;

@@ -116,6 +116,10 @@ impl State {
     }
   }
 
+  pub fn get_all_users(&self) -> &HashMap<String, Id> {
+    &self.users
+  }
+
   // TODO: move to Object?
   pub fn username(&self, id: Id) -> Option<String> {
     for (key, value) in self.users.iter() {
