@@ -8,10 +8,12 @@ mod world;
 use crate::chat::{AppState, ChatSocket};
 use crate::util::ResultAnyError;
 use crate::world::{World, WorldRef};
-use actix::Arbiter;
+use actix::clock::Duration;
+use actix::prelude::*;
 use actix_web::middleware::Logger;
 use actix_web::{web, App, HttpRequest, HttpResponse, HttpServer, Responder};
 use actix_web_actors::ws;
+use chrono::prelude::*;
 use futures::executor;
 use listenfd::ListenFd;
 use log::info;
@@ -44,11 +46,16 @@ fn main() -> Result<(), std::io::Error> {
 
   let mut system = actix_rt::System::builder()
     .name("main")
-    .stop_on_panic(true)
+    .stop_on_panic(true) // TODO: this doesn't seem to work (panics kill worker thread (?) but not main thread)
     .build();
 
   // This reference to _world keeps it alive
   let (_world, world_ref) = build_world()?;
+
+  ScheduledSaveActor {
+    world_ref: world_ref.clone(),
+  }
+  .start();
 
   let res = system.block_on(run_server(world_ref.clone()));
 
@@ -74,8 +81,13 @@ fn save_world(world_ref: WorldRef) -> ResultAnyError<()> {
   let file = File::create(&temp_path)?;
   world_ref.read(|w| w.save(file))?;
 
+  let now = Utc::now().to_rfc3339();
+  copy(
+    temp_path.clone(),
+    state_dir.join(format!("world-{}.json", now)),
+  )?;
+
   let final_path = state_dir.join("world.json");
-  let _ = copy(final_path.clone(), state_dir.join("world.bak.json")); // ignore result
   rename(temp_path, final_path)?;
   Ok(())
 }
@@ -152,4 +164,21 @@ async fn run_server(world_ref: WorldRef) -> Result<(), std::io::Error> {
   .expect("Error setting Ctrl-C handler");
 
   running.await
+}
+
+struct ScheduledSaveActor {
+  world_ref: WorldRef,
+}
+
+impl Actor for ScheduledSaveActor {
+  type Context = Context<Self>;
+
+  fn started(&mut self, ctx: &mut Context<Self>) {
+    let six_hours = 60 * 60 * 6;
+    ctx.run_interval(Duration::from_secs(six_hours), |s, _ctx| {
+      log::info!("Saving world on schedule.");
+      let _ = save_world(s.world_ref.clone())
+        .map_err(|e| log::error!("Unable to save world on schedule: {}", e));
+    });
+  }
 }
