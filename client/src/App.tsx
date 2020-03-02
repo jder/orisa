@@ -23,7 +23,7 @@ const App = () => {
     } else {
       return <form onSubmit={handleSubmit}>
         <label htmlFor="username">Username: </label>
-        <input name="username" autoFocus type="text" value={newUsername} onChange={handleChange} placeholder="mrmudkips" />
+        <input name="username" autoFocus autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false" type="text" value={newUsername} onChange={handleChange} placeholder="mrmudkips" />
         <input type="submit" value="Login" />
       </form>
     }
