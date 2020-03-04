@@ -4,16 +4,30 @@ use crate::lua::{LuaHost, PackageReference, SerializableValue};
 use crate::object::executor::ObjectExecutor;
 use crate::object::types::*;
 use actix;
+use actix::AsyncContext;
 use std::collections::HashMap;
+use std::time::{Duration, Instant};
+
+const ADVANCE_TIME_INTERVAL: Duration = Duration::from_millis(100);
 
 pub struct WorldActor {
   lua_host: LuaHost,
   world_ref: WorldRef,
   executors: HashMap<PackageReference, ObjectExecutor>,
+
+  start_game_time: Option<GameTime>,
+  start_instant: Option<Instant>,
 }
 
 impl actix::Actor for WorldActor {
   type Context = actix::Context<Self>;
+
+  fn started(&mut self, ctx: &mut actix::Context<Self>) {
+    self.start_game_time = Some(self.world_ref.read(|w| w.get_state().get_current_time()));
+    self.start_instant = Some(Instant::now());
+
+    ctx.run_interval(ADVANCE_TIME_INTERVAL, |actor, _ctx| actor.advance_time());
+  }
 }
 
 impl actix::Message for Message {
@@ -58,6 +72,8 @@ impl WorldActor {
       lua_host: lua_host.clone(),
       world_ref: world_ref.clone(),
       executors: HashMap::new(),
+      start_game_time: None,
+      start_instant: None,
     }
   }
 
@@ -103,5 +119,19 @@ impl WorldActor {
         )
       });
     }
+  }
+
+  fn advance_time(&mut self) {
+    let start_game = self.start_game_time.unwrap();
+    let start_instant = self.start_instant.unwrap();
+    let elapsed = Instant::now() - start_instant;
+    let now = start_game + elapsed.as_secs();
+
+    self.world_ref.write(|w| {
+      let last_updated = w.get_state().get_current_time();
+      if now > last_updated {
+        w.advance_time(now);
+      }
+    });
   }
 }

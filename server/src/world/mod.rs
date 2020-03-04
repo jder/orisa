@@ -4,7 +4,7 @@ use self::actor::{ControlMessage, WorldActor};
 use crate::chat::{ChatSocket, ToClientMessage};
 use crate::lua::LuaHost;
 use crate::object::types::Message;
-pub use crate::object::types::{Id, ObjectKind};
+pub use crate::object::types::*;
 use crate::repo;
 use crate::util::WeakRw;
 use actix;
@@ -24,7 +24,7 @@ pub struct World {
   chat_connections: MultiMap<Id, actix::Addr<ChatSocket>>,
 }
 
-/// Weak reference to the world for use by ObjectActors
+/// Weak reference to the world we can freely share.
 pub type WorldRef = WeakRw<World>;
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -132,5 +132,18 @@ impl World {
       state: self.state.clone(),
     };
     serde_json::to_writer_pretty(w, &state)
+  }
+
+  pub fn advance_time(&mut self, new_time: GameTime) {
+    for (id, timer) in self.state.ready_timers(new_time) {
+      self.actor.do_send(Message {
+        immediate_sender: id,
+        target: id,
+        name: timer.message_name,
+        original_user: None,
+        payload: timer.payload,
+      });
+    }
+    self.state.set_current_time(new_time);
   }
 }

@@ -1,5 +1,5 @@
 use crate::lua::{PackageReference, SerializableValue};
-use crate::object::types::{Id, ObjectKind};
+use crate::object::types::*;
 use core::fmt::Display;
 use serde::*;
 use std::collections::HashMap;
@@ -39,6 +39,9 @@ struct Object {
   kind: ObjectKind,
   attrs: HashMap<String, SerializableValue>,
   state: HashMap<String, SerializableValue>,
+
+  #[serde(default)]
+  timers: HashMap<String, Timer>,
 }
 
 impl Object {
@@ -48,6 +51,7 @@ impl Object {
       kind: kind,
       attrs: HashMap::new(),
       state: HashMap::new(),
+      timers: HashMap::new(),
     }
   }
 }
@@ -58,6 +62,9 @@ pub struct State {
   entrance: Id,
   users: HashMap<String, Id>,
   live_packages: HashMap<PackageReference, String>, // string is lua code
+
+  #[serde(default)]
+  current_time: GameTime,
 }
 
 /// Methods for manipulating the state of the world.
@@ -76,6 +83,7 @@ impl State {
       entrance: Id(0),
       users: HashMap::new(),
       live_packages: HashMap::new(),
+      current_time: Default::default(),
     }
   }
 
@@ -219,5 +227,28 @@ impl State {
 
   pub fn kind(&self, id: Id) -> Result<ObjectKind> {
     Ok(self.object(id)?.kind.clone())
+  }
+
+  pub fn get_current_time(&self) -> GameTime {
+    self.current_time
+  }
+
+  pub fn set_current_time(&mut self, time: GameTime) {
+    self.current_time = time
+  }
+
+  pub fn ready_timers(&self, new_time: GameTime) -> Vec<(Id, Timer)> {
+    self
+      .objects
+      .iter()
+      .enumerate()
+      .flat_map(|(id, o)| {
+        o.timers
+          .values()
+          .filter(|t| t.target_time <= new_time && t.target_time > self.current_time)
+          .map(|t| (Id(id), t.clone()))
+          .collect::<Vec<(Id, Timer)>>()
+      })
+      .collect()
   }
 }
