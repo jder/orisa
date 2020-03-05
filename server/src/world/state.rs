@@ -1,5 +1,5 @@
 use crate::lua::{PackageReference, SerializableValue};
-use crate::object::types::{Id, ObjectKind};
+use crate::object::types::*;
 use core::fmt::Display;
 use serde::*;
 use std::collections::HashMap;
@@ -39,6 +39,9 @@ struct Object {
   kind: ObjectKind,
   attrs: HashMap<String, SerializableValue>,
   state: HashMap<String, SerializableValue>,
+
+  #[serde(default)]
+  timers: HashMap<String, Timer>,
 }
 
 impl Object {
@@ -48,6 +51,7 @@ impl Object {
       kind: kind,
       attrs: HashMap::new(),
       state: HashMap::new(),
+      timers: HashMap::new(),
     }
   }
 }
@@ -58,6 +62,9 @@ pub struct State {
   entrance: Id,
   users: HashMap<String, Id>,
   live_packages: HashMap<PackageReference, String>, // string is lua code
+
+  #[serde(default)]
+  current_time: GameTime,
 }
 
 /// Methods for manipulating the state of the world.
@@ -76,6 +83,7 @@ impl State {
       entrance: Id(0),
       users: HashMap::new(),
       live_packages: HashMap::new(),
+      current_time: Default::default(),
     }
   }
 
@@ -219,5 +227,45 @@ impl State {
 
   pub fn kind(&self, id: Id) -> Result<ObjectKind> {
     Ok(self.object(id)?.kind.clone())
+  }
+
+  pub fn get_current_time(&self) -> GameTime {
+    self.current_time
+  }
+
+  pub fn set_current_time(&mut self, time: GameTime) {
+    self.current_time = time
+  }
+
+  pub fn set_timer(&mut self, id: Id, name: String, timer: Timer) -> Result<()> {
+    let o = self.object_mut(id)?;
+    o.timers.insert(name, timer);
+    Ok(())
+  }
+
+  pub fn clear_timer(&mut self, id: Id, name: &str) -> Result<()> {
+    let o = self.object_mut(id)?;
+    o.timers.remove(name);
+    Ok(())
+  }
+
+  pub fn extract_ready_timers(&mut self, new_time: GameTime) -> Vec<(Id, Timer)> {
+    let current_time = self.current_time;
+    self
+      .objects
+      .iter_mut()
+      .enumerate()
+      .flat_map(|(id, o)| {
+        let (mut ready, not_ready) = o
+          .timers
+          .drain()
+          .partition(|(_k, t)| t.target_time <= new_time && t.target_time > current_time);
+        o.timers = not_ready;
+        ready
+          .drain()
+          .map(|(_k, t)| (Id(id), t))
+          .collect::<Vec<(Id, Timer)>>()
+      })
+      .collect()
   }
 }

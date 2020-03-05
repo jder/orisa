@@ -349,6 +349,42 @@ fn print_override<'lua>(
   Ok(())
 }
 
+fn set_timer(
+  _lua_ctx: rlua::Context,
+  (name, delay, message_name, payload): (Option<String>, f64, String, SerializableValue),
+) -> rlua::Result<String> {
+  let id = S::get_id();
+  let original_user = S::get_original_user();
+  S::with_world_mut(|s| {
+    if delay < 1.0 {
+      return Err(rlua::Error::external("Delay expected to be > 1 second"));
+    }
+    let name = name.unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
+    let now = s.get_state().get_current_time();
+
+    let target_time = now + (delay as u64);
+    s.get_state_mut().set_timer(
+      id,
+      name.clone(),
+      Timer {
+        target_time,
+        original_user,
+        message_name,
+        payload,
+      },
+    )?;
+    Ok(name)
+  })
+}
+
+fn clear_timer(_lua_ctx: rlua::Context, name: String) -> rlua::Result<String> {
+  let id = S::get_id();
+  S::with_world_mut(|s| {
+    s.get_state_mut().clear_timer(id, &name)?;
+    Ok(name)
+  })
+}
+
 // We currently load packages in 2 flavours:
 // * system.foo, which loads "foo.lua" from the filesystem.
 // * user/live.foo, which loads the local (in-memory) package named user.foo from the world.
@@ -444,6 +480,9 @@ pub(super) fn register_api(lua_ctx: rlua::Context) -> rlua::Result<()> {
   )?;
 
   orisa.set("create_object", lua_ctx.create_function(create_object)?)?;
+
+  orisa.set("set_timer", lua_ctx.create_function(set_timer)?)?;
+  orisa.set("clear_timer", lua_ctx.create_function(clear_timer)?)?;
 
   globals.set("orisa", orisa)?;
 

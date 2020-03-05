@@ -1,4 +1,5 @@
 use crate::lua::{PackageReference, SerializableValue};
+use core::ops::Add;
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
@@ -50,5 +51,50 @@ pub struct Message {
   pub immediate_sender: Id,
   pub original_user: Option<Id>,
   pub name: String,
+  pub payload: SerializableValue,
+}
+#[derive(Debug, PartialEq, PartialOrd, Clone, Copy, Hash, Eq, Deserialize, Serialize)]
+pub struct GameTime(u64);
+
+impl<'lua> rlua::ToLua<'lua> for GameTime {
+  fn to_lua(self, _lua_ctx: rlua::Context<'lua>) -> rlua::Result<rlua::Value> {
+    Ok(rlua::Value::Number(self.0 as f64))
+  }
+}
+
+impl<'lua> rlua::FromLua<'lua> for GameTime {
+  fn from_lua(value: rlua::Value<'lua>, _lua_ctx: rlua::Context<'lua>) -> rlua::Result<GameTime> {
+    if let rlua::Value::Number(n) = value {
+      if n > 0.0 {
+        Ok(GameTime(n as u64))
+      } else {
+        Err(rlua::Error::external(
+          "Expected positive number for game time",
+        ))
+      }
+    } else {
+      Err(rlua::Error::external("Expected a number for game time"))
+    }
+  }
+}
+
+impl Add<u64> for GameTime {
+  type Output = GameTime;
+  fn add(self, rhs: u64) -> GameTime {
+    GameTime(self.0 + rhs)
+  }
+}
+
+impl Default for GameTime {
+  fn default() -> Self {
+    return GameTime(0);
+  }
+}
+
+#[derive(Serialize, Deserialize, Clone)]
+pub struct Timer {
+  pub target_time: GameTime,
+  pub original_user: Option<Id>,
+  pub message_name: String,
   pub payload: SerializableValue,
 }
