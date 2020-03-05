@@ -25,13 +25,28 @@ impl LuaHost {
       | rlua::StdLib::TABLE
       | rlua::StdLib::STRING
       | rlua::StdLib::UTF8
-      | rlua::StdLib::MATH;
+      | rlua::StdLib::MATH
+      | rlua::StdLib::OS; // this is unsafe but we remove most of it below
     let lua = rlua::Lua::new_with(libs);
     lua.context::<_, rlua::Result<()>>(|lua_ctx| {
       // remove some sensitive things, replace load with a string-only version
       lua_ctx.globals().set("dofile", rlua::Value::Nil)?;
       lua_ctx.globals().set("loadfile", rlua::Value::Nil)?;
       lua_ctx.globals().set("collectgarbage", rlua::Value::Nil)?;
+      if let rlua::Value::Table(full_os) = lua_ctx.globals().get("os")? {
+        let allowed_os: Vec<(rlua::Value, rlua::Value)> = vec!["date", "time", "difftime"]
+          .iter()
+          .map(|k| {
+            let key = k.to_lua(lua_ctx)?;
+            Ok((key.clone(), full_os.get(key)?))
+          })
+          .collect::<rlua::Result<Vec<(rlua::Value, rlua::Value)>>>()?;
+        lua_ctx
+          .globals()
+          .set("os", lua_ctx.create_table_from(allowed_os)?)?;
+      } else {
+        return Err(rlua::Error::external("Unable to load OS library."));
+      }
       lua_ctx
         .globals()
         .set("load", lua_ctx.create_function(LuaHost::load_string)?)?;
