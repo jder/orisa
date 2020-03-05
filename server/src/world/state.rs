@@ -237,16 +237,33 @@ impl State {
     self.current_time = time
   }
 
-  pub fn ready_timers(&self, new_time: GameTime) -> Vec<(Id, Timer)> {
+  pub fn set_timer(&mut self, id: Id, name: String, timer: Timer) -> Result<()> {
+    let o = self.object_mut(id)?;
+    o.timers.insert(name, timer);
+    Ok(())
+  }
+
+  pub fn clear_timer(&mut self, id: Id, name: &str) -> Result<()> {
+    let o = self.object_mut(id)?;
+    o.timers.remove(name);
+    Ok(())
+  }
+
+  pub fn extract_ready_timers(&mut self, new_time: GameTime) -> Vec<(Id, Timer)> {
+    let current_time = self.current_time;
     self
       .objects
-      .iter()
+      .iter_mut()
       .enumerate()
       .flat_map(|(id, o)| {
-        o.timers
-          .values()
-          .filter(|t| t.target_time <= new_time && t.target_time > self.current_time)
-          .map(|t| (Id(id), t.clone()))
+        let (mut ready, not_ready) = o
+          .timers
+          .drain()
+          .partition(|(_k, t)| t.target_time <= new_time && t.target_time > current_time);
+        o.timers = not_ready;
+        ready
+          .drain()
+          .map(|(_k, t)| (Id(id), t))
           .collect::<Vec<(Id, Timer)>>()
       })
       .collect()

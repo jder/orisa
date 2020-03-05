@@ -94,6 +94,7 @@ impl Default for GameTime {
 #[derive(Serialize, Deserialize, Clone)]
 pub struct Timer {
   pub target_time: GameTime,
+  pub original_user: Option<Id>,
   pub message_name: String,
   pub payload: SerializableValue,
 }

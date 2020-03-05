@@ -135,12 +135,12 @@ impl World {
   }
 
   pub fn advance_time(&mut self, new_time: GameTime) {
-    for (id, timer) in self.state.ready_timers(new_time) {
+    for (id, timer) in self.state.extract_ready_timers(new_time) {
       self.actor.do_send(Message {
         immediate_sender: id,
         target: id,
         name: timer.message_name,
-        original_user: None,
+        original_user: timer.original_user,
         payload: timer.payload,
       });
     }
