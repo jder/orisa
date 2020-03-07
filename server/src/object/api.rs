@@ -349,7 +349,7 @@ fn print_override<'lua>(
   Ok(())
 }
 
-fn set_timer(
+fn set_delay(
   _lua_ctx: rlua::Context,
   (name, delay, message_name, payload): (Option<String>, f64, String, SerializableValue),
 ) -> rlua::Result<String> {
@@ -377,7 +377,7 @@ fn set_timer(
   })
 }
 
-fn clear_timer(_lua_ctx: rlua::Context, name: String) -> rlua::Result<String> {
+fn clear_delay(_lua_ctx: rlua::Context, name: String) -> rlua::Result<String> {
   let id = S::get_id();
   S::with_world_mut(|s| {
     s.get_state_mut().clear_timer(id, &name)?;
@@ -481,8 +481,8 @@ pub(super) fn register_api(lua_ctx: rlua::Context) -> rlua::Result<()> {
 
   orisa.set("create_object", lua_ctx.create_function(create_object)?)?;
 
-  orisa.set("set_timer", lua_ctx.create_function(set_timer)?)?;
-  orisa.set("clear_timer", lua_ctx.create_function(clear_timer)?)?;
+  orisa.set("set_delay", lua_ctx.create_function(set_delay)?)?;
+  orisa.set("clear_delay", lua_ctx.create_function(clear_delay)?)?;
 
   globals.set("orisa", orisa)?;
 
