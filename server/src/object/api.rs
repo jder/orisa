@@ -387,7 +387,7 @@ fn clear_delay(_lua_ctx: rlua::Context, name: String) -> rlua::Result<String> {
 
 // We currently load packages in 2 flavours:
 // * system.foo, which loads "foo.lua" from the filesystem.
-// * user/live.foo, which loads the local (in-memory) package named user.foo from the world.
+// * user/live.foo, which loads the local (in-memory) package from the world.
 // In the future, we want to extend this to user/repo.foo
 fn require(lua_ctx: rlua::Context, package_name: String) -> rlua::Result<rlua::Value> {
   let loaded = lua_ctx
