@@ -8,7 +8,7 @@ pub use crate::object::types::*;
 use crate::repo;
 use crate::util::WeakRw;
 use actix;
-use actix::Actor;
+use actix::prelude::*;
 use git2;
 use multimap::MultiMap;
 use serde::{Deserialize, Serialize};
@@ -93,7 +93,6 @@ impl World {
     from: Option<impl Read>,
   ) -> Result<(Arc<RwLock<Option<World>>>, WorldRef), serde_json::error::Error> {
     let arc = Arc::new(RwLock::new(None));
-
     let world_ref = WorldRef::new(&arc);
 
     let state = match from {
@@ -105,24 +104,27 @@ impl World {
     };
 
     let lua_host = LuaHost::new(lua_path, git_config).unwrap();
-
-    let addr = {
-      let lua_host = lua_host.clone();
-      let world_ref = world_ref.clone();
-      WorldActor::start_in_arbiter(arbiter, move |_ctx| WorldActor::new(&lua_host, &world_ref))
-    };
-
-    let world = World {
-      state: state,
-      actor: addr,
-      chat_connections: MultiMap::new(),
-      lua_host: lua_host,
-    };
-
+    
+    // We need to tie the WorldActor and World together bidirectionally,
+    // so we create the World where we can get the actor address but
+    // before the WorldActor starts to run (so its world_ref is not invalid.)
     {
-      let mut maybe_world = arc.write().unwrap();
-      *maybe_world = Some(world);
+      let world_ref = world_ref.clone();
+      let arc = arc.clone();
+      WorldActor::start_in_arbiter(arbiter, move |ctx| {
+        let world = World {
+          state: state,
+          actor: ctx.address(),
+          chat_connections: MultiMap::new(),
+          lua_host: lua_host.clone(),
+        };
+
+        *arc.write().unwrap() = Some(world);
+        
+        WorldActor::new(&lua_host, &world_ref)
+      });
     }
+
     Ok((arc, world_ref))
   }
 
