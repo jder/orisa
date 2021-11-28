@@ -59,12 +59,15 @@ impl ChatSocket {
     log::info!("Got message {:?}", message);
     match message {
       ToServerMessage::Login { username } => self.handle_login(&username, ctx),
-      ToServerMessage::Command { text } => {
+      ToServerMessage::Command { text, extra } => {
         let mut payload = HashMap::new();
         payload.insert(
           "message".to_string(),
           SerializableValue::String(text.to_string()),
         );
+        if let Some(extra) = extra {
+          payload.insert("extra".to_string(), serde_json::from_value(extra)?);
+        }
         self.handle_user_command("command", SerializableValue::Dict(payload))
       }
       ToServerMessage::ReloadCode {} => self.handle_reload(ctx),
@@ -205,10 +208,18 @@ impl ActixMessage for ToClientMessage {
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(tag = "type")]
 enum ToServerMessage {
-  Login { username: String },
-  Command { text: String },
+  Login {
+    username: String,
+  },
+  Command {
+    text: String,
+    extra: Option<serde_json::Value>,
+  },
   ReloadCode {},
-  SaveFile { name: String, content: String },
+  SaveFile {
+    name: String,
+    content: String,
+  },
 }
 
 impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for ChatSocket {
