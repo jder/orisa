@@ -185,6 +185,10 @@ impl State {
       .map(|o| o.attrs.get(name).map(|v| v.clone()));
   }
 
+  pub fn list_attrs(&self, id: Id) -> Result<impl Iterator<Item = &str>> {
+    self.object(id).map(|o| o.attrs.keys().map(|s| s.as_str()))
+  }
+
   pub fn set_state(
     &mut self,
     id: Id,

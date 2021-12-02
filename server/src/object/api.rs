@@ -170,6 +170,16 @@ fn get_attr(_lua_ctx: rlua::Context, (id, key): (Id, String)) -> rlua::Result<Se
   Ok(S::with_world_state(|w| w.get_attr(id, &key))?.unwrap_or(SerializableValue::Nil))
 }
 
+fn list_attrs(_lua_ctx: rlua::Context, id: Id) -> rlua::Result<Vec<SerializableValue>> {
+  Ok(S::with_world_state(|w| {
+    w.list_attrs(id).map(|names| {
+      names
+        .map(|name| SerializableValue::String(name.to_string()))
+        .collect()
+    })
+  })?)
+}
+
 fn get_package_content(_lua_ctx: rlua::Context, name: String) -> rlua::Result<Option<String>> {
   let package = PackageReference::new(&name).map_err(|e| rlua::Error::external(e))?;
   if package.is_live_package() {
@@ -469,6 +479,7 @@ pub(super) fn register_api(lua_ctx: rlua::Context) -> rlua::Result<()> {
   orisa.set("get_state", lua_ctx.create_function(get_state)?)?;
   orisa.set("set_attr", lua_ctx.create_function(set_attr)?)?;
   orisa.set("get_attr", lua_ctx.create_function(get_attr)?)?;
+  orisa.set("list_attrs", lua_ctx.create_function(list_attrs)?)?;
 
   orisa.set(
     "get_package_content",
