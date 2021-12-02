@@ -1,4 +1,5 @@
 FROM rust:1.56-slim-bullseye as builder
+RUN apt-get udpate && apt-get install -y pkg-config libssl-dev
 WORKDIR /usr/src/orisa
 COPY . .
 RUN cargo install --path .
