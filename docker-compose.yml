@@ -1,8 +1,8 @@
 version: '3'
-services: 
+services:
   frontend:
     build: client
-    ports: 
+    ports:
       - 8080:80
     links:
       - backend
@@ -21,4 +21,7 @@ services:
       - ORISA_CODE_BRANCH=master
       - RUST_BACKTRACE=1
       - RUST_LOG=INFO
+    restart: always
+  gamebot:
+    build: ../gamebot
     restart: always
