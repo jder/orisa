@@ -1,4 +1,4 @@
-FROM rust:1.41 as builder
+FROM rust:1.56 as builder
 WORKDIR /usr/src/orisa
 COPY . .
 RUN cargo install --path .
