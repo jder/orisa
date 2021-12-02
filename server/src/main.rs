@@ -29,7 +29,7 @@ extern crate scoped_tls;
 extern crate lazy_static;
 
 async fn index() -> impl Responder {
-  HttpResponse::Ok().body("Hello world!")
+  HttpResponse::Ok().body("Hello from orisa!")
 }
 
 async fn socket(

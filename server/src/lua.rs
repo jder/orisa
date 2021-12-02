@@ -279,7 +279,7 @@ impl PackageReference {
   pub fn new(name: &str) -> ResultAnyError<PackageReference> {
     lazy_static! {
       // TODO: For now we only support a single package component (i.e. system.foo, not system.foo.bar)
-      static ref RE: Regex = Regex::new(r"^(?P<user>[[:word:]]+)(/(?P<repo>[[:word:]]+))?\.(?P<package>[[:word:]]+)$").unwrap();
+      static ref RE: Regex = Regex::new(r"^(?P<user>[-[:word:]]+)(/(?P<repo>[-[:word:]]+))?\.(?P<package>[-[:word:]]+)$").unwrap();
     }
 
     RE.captures(name)
@@ -295,8 +295,8 @@ impl PackageReference {
     return &self.user;
   }
 
-  pub fn for_user(username: &str) -> PackageReference {
-    PackageReference::new(&format!("{}/live.user", username)).unwrap()
+  pub fn for_user(username: &str, user_type: &str) -> PackageReference {
+    PackageReference::new(&format!("{}/live.{}", username, user_type)).unwrap()
   }
 
   pub fn for_room() -> PackageReference {

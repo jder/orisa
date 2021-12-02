@@ -111,11 +111,11 @@ impl State {
     self.entrance
   }
 
-  pub fn get_or_create_user(&mut self, username: &str) -> Id {
+  pub fn get_or_create_user(&mut self, username: &str, user_type: &str) -> Id {
     if let Some(id) = self.users.get(username) {
       *id
     } else {
-      let id = self.create_object(ObjectKind::for_user(username));
+      let id = self.create_object(ObjectKind::for_user(username, user_type));
       let entrance = self.entrance();
       self.object_mut(id).unwrap().parent = Some(entrance);
 

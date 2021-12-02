@@ -1,4 +1,4 @@
-// From server
+// To server
 export class ToServerMessage {
   type: string;
 
@@ -9,23 +9,25 @@ export class ToServerMessage {
 
 export class LoginMessage extends ToServerMessage {
   username: string;
+  user_type: string;
 
   constructor(username: string) {
     super("Login")
     this.username = username;
+    this.user_type = 'user';
   }
 }
 
 export class CommandMessage extends ToServerMessage {
   text: string;
-  extra: JSON | null;
 
-  constructor(text: string, extra: JSON | null = null) {
+  constructor(text: string) {
     super("Command")
     this.text = text;
-    this.extra = extra;
   }
 }
+
+// There is also a SendMessage type (currently unused in JS)
 
 export class ReloadCodeMessage extends ToServerMessage {
   constructor() {
@@ -44,6 +46,7 @@ export class SaveFileMessage extends ToServerMessage {
   }
 }
 
+// From Server
 export type ToClientMessage = { type: string; };
 export type TellMessage = { type: string, content: ChatRowContent };
 export type BacklogMessage = { type: string, history: [ChatRowContent] };

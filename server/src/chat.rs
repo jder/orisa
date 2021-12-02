@@ -58,17 +58,20 @@ impl ChatSocket {
     let message: ToServerMessage = serde_json::from_str(&text)?;
     log::info!("Got message {:?}", message);
     match message {
-      ToServerMessage::Login { username } => self.handle_login(&username, ctx),
-      ToServerMessage::Command { text, extra } => {
+      ToServerMessage::Login {
+        username,
+        user_type,
+      } => self.handle_login(&username, &user_type, ctx),
+      ToServerMessage::Command { text } => {
         let mut payload = HashMap::new();
         payload.insert(
           "message".to_string(),
           SerializableValue::String(text.to_string()),
         );
-        if let Some(extra) = extra {
-          payload.insert("extra".to_string(), serde_json::from_value(extra)?);
-        }
         self.handle_user_command("command", SerializableValue::Dict(payload))
+      }
+      ToServerMessage::SendMessage { name, payload } => {
+        self.handle_user_command(&name, serde_json::from_value(payload)?)
       }
       ToServerMessage::ReloadCode {} => self.handle_reload(ctx),
       ToServerMessage::SaveFile { name, content } => {
@@ -84,10 +87,17 @@ impl ChatSocket {
     Ok(())
   }
 
-  fn handle_login(&mut self, username: &str, ctx: &mut ws::WebsocketContext<Self>) {
+  fn handle_login(
+    &mut self,
+    username: &str,
+    user_type: &str,
+    ctx: &mut ws::WebsocketContext<Self>,
+  ) {
     let world_ref = self.app_data.world_ref.clone();
     world_ref.write(|world| {
-      let id = world.get_state_mut().get_or_create_user(username);
+      let id = world
+        .get_state_mut()
+        .get_or_create_user(username, user_type);
 
       if let Some(existing_id) = self.self_id {
         world.remove_chat_connection(existing_id, ctx.address());
@@ -210,10 +220,14 @@ impl ActixMessage for ToClientMessage {
 enum ToServerMessage {
   Login {
     username: String,
+    user_type: String, // eg "user" or "group" or whatever -- will become $username/live.$user_type
   },
   Command {
     text: String,
-    extra: Option<serde_json::Value>,
+  },
+  SendMessage {
+    name: String,
+    payload: serde_json::Value,
   },
   ReloadCode {},
   SaveFile {
